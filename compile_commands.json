@@ -1,0 +1,50 @@
+[
+{
+  "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\gcc.exe -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include -o CMakeFiles\\ktx.dir\\external\\ktx\\lib\\texture.c.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\external\\ktx\\lib\\texture.c",
+  "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/lib/texture.c",
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/ktx.dir/external/ktx/lib/texture.c.obj"
+},
+{
+  "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\gcc.exe -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include -o CMakeFiles\\ktx.dir\\external\\ktx\\lib\\hashlist.c.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\external\\ktx\\lib\\hashlist.c",
+  "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/lib/hashlist.c",
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/ktx.dir/external/ktx/lib/hashlist.c.obj"
+},
+{
+  "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\gcc.exe -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include -o CMakeFiles\\ktx.dir\\external\\ktx\\lib\\checkheader.c.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\external\\ktx\\lib\\checkheader.c",
+  "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/lib/checkheader.c",
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/ktx.dir/external/ktx/lib/checkheader.c.obj"
+},
+{
+  "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\gcc.exe -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include -o CMakeFiles\\ktx.dir\\external\\ktx\\lib\\swap.c.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\external\\ktx\\lib\\swap.c",
+  "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/lib/swap.c",
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/ktx.dir/external/ktx/lib/swap.c.obj"
+},
+{
+  "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\gcc.exe -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include -o CMakeFiles\\ktx.dir\\external\\ktx\\lib\\memstream.c.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\external\\ktx\\lib\\memstream.c",
+  "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/lib/memstream.c",
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/ktx.dir/external/ktx/lib/memstream.c.obj"
+},
+{
+  "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\gcc.exe -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include -o CMakeFiles\\ktx.dir\\external\\ktx\\lib\\filestream.c.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\external\\ktx\\lib\\filestream.c",
+  "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/lib/filestream.c",
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/ktx.dir/external/ktx/lib/filestream.c.obj"
+},
+{
+  "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\gcc.exe -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include -o CMakeFiles\\ktx.dir\\external\\ktx\\lib\\vkloader.c.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\external\\ktx\\lib\\vkloader.c",
+  "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/lib/vkloader.c",
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/ktx.dir/external/ktx/lib/vkloader.c.obj"
+},
+{
+  "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DVK_NO_PROTOTYPES -D_CRT_SECURE_NO_WARNINGS -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include  -DVK_USE_PLATFORM_WIN32_KHR -DNOMINMAX -D_USE_MATH_DEFINES -std=gnu++20 -o CMakeFiles\\HowToVulkan.dir\\main.cpp.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\main.cpp",
+  "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/main.cpp",
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/HowToVulkan.dir/main.cpp.obj"
+}
+]
