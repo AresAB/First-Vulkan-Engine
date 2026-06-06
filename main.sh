@@ -1,2 +1,2 @@
 #!/bin/bash
-./build/bin/HowToVulkan.exe $1
+./build/bin/vulkan_engine.exe $1

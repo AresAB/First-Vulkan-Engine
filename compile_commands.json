@@ -43,8 +43,8 @@
 },
 {
   "directory": "C:/Users/Ares/Documents/workspace/vulkan_engine/build",
-  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DVK_NO_PROTOTYPES -D_CRT_SECURE_NO_WARNINGS -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include  -DVK_USE_PLATFORM_WIN32_KHR -DNOMINMAX -D_USE_MATH_DEFINES -std=gnu++20 -o CMakeFiles\\HowToVulkan.dir\\main.cpp.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\main.cpp",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe -DVK_NO_PROTOTYPES -D_CRT_SECURE_NO_WARNINGS -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/tinyobj -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/include -IC:/Users/Ares/Documents/workspace/vulkan_engine/external/ktx/other_include -isystem C:/VulkanSDK/1.4.350.0/include  -DVK_USE_PLATFORM_WIN32_KHR -DNOMINMAX -D_USE_MATH_DEFINES -std=gnu++20 -o CMakeFiles\\vulkan_engine.dir\\main.cpp.obj -c C:\\Users\\Ares\\Documents\\workspace\\vulkan_engine\\main.cpp",
   "file": "C:/Users/Ares/Documents/workspace/vulkan_engine/main.cpp",
-  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/HowToVulkan.dir/main.cpp.obj"
+  "output": "C:/Users/Ares/Documents/workspace/vulkan_engine/build/CMakeFiles/vulkan_engine.dir/main.cpp.obj"
 }
 ]
