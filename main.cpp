@@ -80,28 +80,32 @@ int main(int argc, char* argv[])
 	// this form of vkEnumerate will fill physical_devices up to num
 	chk(vkEnumeratePhysicalDevices(vk_instance, &num_physical_devices, physical_devices));
 
-	// If user chose a GPU to use via command line argument,
-	// use that GPU, otherwise use any GPU (w/ priority to discrete)
+	// Use any of the available GPUs (w/ priority to discrete)
 	// Throw error if no GPUs support Vulkan 1.3
+	// Override if user asks for a specific GPU via command line
 	uint32_t physical_device_index = num_physical_devices;
-	if(argc > 1) {
-		physical_device_index = std::stoi(argv[1]);
-		assert(physical_device_index < num_physical_devices);
+
+	std::cout << "GPU(s)\n------------------------\n";
+	for(uint32_t i = 0; i < num_physical_devices; i++) {
+		VkPhysicalDeviceProperties2 physical_device_prop{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+		vkGetPhysicalDeviceProperties2(physical_devices[i], &physical_device_prop);
+		std::cout << "  |- (" << i << ") " << physical_device_prop.properties.deviceName << "\n";
+		if(VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) >= 1 && (VK_API_VERSION_MINOR(physical_device_prop.properties.apiVersion) >= 3 || VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) > 1) && (physical_device_prop.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU || i < physical_device_index)) {
+			physical_device_index = i;
+		}
 	}
-	else {
-		std::cout << "GPU(s)\n------------------------\n";
-		for(uint32_t i = 0; i < num_physical_devices; i++) {
-			VkPhysicalDeviceProperties2 physical_device_prop{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-			vkGetPhysicalDeviceProperties2(physical_devices[i], &physical_device_prop);
-			std::cout << "  |- (" << i << ") " << physical_device_prop.properties.deviceName << "\n";
-			if(VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) >= 1 && (VK_API_VERSION_MINOR(physical_device_prop.properties.apiVersion) >= 3 || VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) > 1) && (physical_device_prop.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU || i < physical_device_index)) {
-				physical_device_index = i;
-			}
+	std::cout << "------------------------\n";
+
+	if(argc > 1) {
+		if(std::stoi(argv[1]) < num_physical_devices) {
+			physical_device_index = std::stoi(argv[1]);
 		}
-		std::cout << "------------------------\n";
-		if(physical_device_index == num_physical_devices) {
-			std::cerr << "ERROR: No GPU found that supports Vulkan 1.3 or above\n";
+		else { 
+			std::cout << "ERROR: Input GPU index too high, defaulting back to automatic selection.\n";
 		}
+	}
+	else if(physical_device_index == num_physical_devices) {
+		std::cerr << "ERROR: No GPU found that supports Vulkan 1.3 or above\n";
 	}
 
 	VkPhysicalDevice physical_device = physical_devices[physical_device_index];
