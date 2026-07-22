@@ -2,5 +2,5 @@
 ./compile.sh
 if [ $? = 0 ]; then
 	echo
-	./main.sh
+	./validate.sh
 fi
