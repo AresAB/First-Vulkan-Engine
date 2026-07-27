@@ -63,7 +63,6 @@ struct ShaderData {
 	glm::mat4 view;
 	glm::mat4 model[3];
 	glm::vec4 light_pos{ 0.0f, -10.0f, 10.0f, 0.0f };
-	uint32_t selected{1};
 };
 struct Texture {
 	VmaAllocation allocation{ VK_NULL_HANDLE };
@@ -450,7 +449,7 @@ int main(int argc, char* argv[])
 			.height = surface_caps.currentExtent.height
 		},
 		.imageArrayLayers = 1,
-		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
 		.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
 		.presentMode = VK_PRESENT_MODE_FIFO_KHR
@@ -998,6 +997,148 @@ int main(int argc, char* argv[])
 		// Acquire next image
 		chk_swapchain(vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, image_acquired_semaphores[frame_index], VK_NULL_HANDLE, &image_index), __LINE__);
 
+		// Poll application events
+		SDL_Event event;
+		while(SDL_PollEvent(&event)) {
+			if(event.type == SDL_EVENT_QUIT) {
+				quit = true;
+				break;
+			}
+			// Screenshot
+			if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_Q) {
+				VkMemoryRequirements image_mem_reqs;
+				vkGetImageMemoryRequirements(device, sc_images[image_index], &image_mem_reqs);
+
+				VkBuffer trans_image_buffer;
+				VmaAllocation trans_image_allocation;
+				VkBufferCreateInfo trans_image_bufferCI {
+					.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+					.size = image_mem_reqs.size,
+					.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT
+				};
+				VmaAllocationCreateInfo trans_image_allocCI {
+					.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+					.usage = VMA_MEMORY_USAGE_AUTO
+				};
+				VmaAllocationInfo trans_image_alloc_info;
+				chk(vmaCreateBuffer(allocator, &trans_image_bufferCI, &trans_image_allocCI, &trans_image_buffer, &trans_image_allocation, &trans_image_alloc_info), __LINE__);
+
+				VkCommandBuffer scrn_shot_cb;
+				VkCommandBufferAllocateInfo scrn_shot_cbAI {
+					.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+					.commandPool = command_pool,
+					.commandBufferCount = 1
+				};
+				chk(vkAllocateCommandBuffers(device, &scrn_shot_cbAI, &scrn_shot_cb), __LINE__);
+				VkCommandBufferBeginInfo scrn_shot_cbBI {
+					.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+					.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+				};
+				chk(vkBeginCommandBuffer(scrn_shot_cb, &scrn_shot_cbBI), __LINE__);
+				VkImageMemoryBarrier2 mb_transfer {
+					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+					.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+					.srcAccessMask = 0,
+					.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+					.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+					.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					.image = sc_images[image_index],
+					.subresourceRange = {
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.levelCount = 1,
+						.layerCount = 1
+					}
+				};
+				VkDependencyInfo transfer_info {
+					.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+					.imageMemoryBarrierCount = 1,
+					.pImageMemoryBarriers = &mb_transfer
+				};
+				vkCmdPipelineBarrier2(scrn_shot_cb, &transfer_info);
+				VkBufferImageCopy copy_region {
+					.bufferOffset = 0,
+					.imageSubresource {
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.mipLevel = 0,
+						.layerCount = 1
+					},
+					.imageExtent {
+						.width = surface_caps.currentExtent.width,
+						.height = surface_caps.currentExtent.height,
+						.depth = 1
+					}
+				};
+				vkCmdCopyImageToBuffer(scrn_shot_cb, sc_images[image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, trans_image_buffer, 1, &copy_region);
+				chk(vkEndCommandBuffer(scrn_shot_cb), __LINE__);
+				VkSemaphoreSubmitInfo scrn_shot_wait_semaphore_info {
+					.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+					.semaphore = image_acquired_semaphores[frame_index],
+					.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
+				};
+				VkCommandBufferSubmitInfo scrn_shot_command_buffer_submit_info {
+					.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+					.commandBuffer = scrn_shot_cb
+				};
+				VkSemaphoreSubmitInfo scrn_shot_signal_semaphore_info {
+					.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+					.semaphore = image_acquired_semaphores[frame_index],
+					.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
+				};
+				VkSubmitInfo2 scrn_shot_submit_info {
+					.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+					.waitSemaphoreInfoCount = 1,
+					.pWaitSemaphoreInfos = &scrn_shot_wait_semaphore_info,
+					.commandBufferInfoCount = 1,
+					.pCommandBufferInfos = &scrn_shot_command_buffer_submit_info,
+					.signalSemaphoreInfoCount = 1,
+					.pSignalSemaphoreInfos = &scrn_shot_signal_semaphore_info
+				};
+				chk(vkQueueSubmit2(queue, 1, &scrn_shot_submit_info, fences[frame_index]), __LINE__);
+				chk(vkWaitForFences(device, 1, &fences[frame_index], VK_TRUE, UINT64_MAX), __LINE__);
+				chk(vkResetFences(device, 1, &fences[frame_index]), __LINE__);
+
+				ktxTextureCreateInfo scrn_shotCI{
+					.vkFormat = image_format,
+					.baseWidth = (ktx_uint32_t)surface_caps.currentExtent.width,
+					.baseHeight = (ktx_uint32_t)surface_caps.currentExtent.height,
+					.baseDepth = 1,
+					.numDimensions = 2,
+					.numLevels = 1,
+					.numLayers = 1,
+					.numFaces = 1,
+					.isArray = KTX_FALSE,
+					.generateMipmaps = KTX_FALSE
+				};
+				ktxTexture2* scrn_shot;
+				bool no_error = true;
+				KTX_error_code err;
+				err = ktxTexture2_Create(&scrn_shotCI, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &scrn_shot);
+				if(err != KTX_SUCCESS) {
+					std::cerr << "KTX ERROR: Failed to initialize ktxTexture for screenshot at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
+					no_error = false;
+				}
+				memcpy(scrn_shot->pData, trans_image_alloc_info.pMappedData, scrn_shot->dataSize);
+				if(err != KTX_SUCCESS) {
+					std::cerr << "KTX ERROR: Failed to copy image buffer data into ktxTexture for screenshot at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
+					no_error = false;
+				}
+				vmaDestroyBuffer(allocator, trans_image_buffer, trans_image_allocation);
+				if(no_error) {
+				err = ktxTexture2_WriteToNamedFile(scrn_shot, "screen_shot_test.ktx");
+				if(err != KTX_SUCCESS) {
+					std::cerr << "KTX ERROR: Failed to write screen shot ktxTexture to file at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
+				}
+				else {
+					std::cout << "Screenshot taken\n";
+				}}
+				ktxTexture2_Destroy(scrn_shot);
+			}
+			if(event.type == SDL_EVENT_WINDOW_RESIZED) {
+				update_swapchain = true;
+			}
+		}
+
 		// Update shader data
 		shader_data.projection = glm::perspective(glm::radians(45.0f), (float)window_width / (float)window_height, 0.1f, 32.0f);
 		shader_data.view = glm::translate(cam_rot_mat, cam_pos);
@@ -1175,32 +1316,6 @@ int main(int argc, char* argv[])
 		// Poll events
 		float deltatime = SDL_GetTicks() - last_time / 1000.0f;
 		last_time = SDL_GetTicks();
-		SDL_Event event;
-		while(SDL_PollEvent(&event)) {
-			if(event.type == SDL_EVENT_QUIT) {
-				quit = true;
-				break;
-			}
-			// Rotate selected object with mouse drag
-			if(event.type == SDL_EVENT_MOUSE_MOTION) {
-				if(event.button.button == SDL_BUTTON_LEFT) {
-					obj_rotations[shader_data.selected].x -= (float)event.motion.yrel * deltatime * 0.0000001f;
-					obj_rotations[shader_data.selected].y -= (float)event.motion.xrel * deltatime * 0.0000001f;
-				}
-			}
-			// Select active model instance (?)
-			if(event.type == SDL_EVENT_KEY_DOWN) {
-				if(event.key.key == SDLK_RIGHT) {
-					shader_data.selected = (shader_data.selected < 2) ? shader_data.selected + 1 : 0;
-				}
-				if(event.key.key == SDLK_LEFT) {
-					shader_data.selected = (shader_data.selected > 0) ? shader_data.selected - 1 : 2;
-				}
-			}
-			if(event.type == SDL_EVENT_WINDOW_RESIZED) {
-				update_swapchain = true;
-			}
-		}
 		const bool* key_states = SDL_GetKeyboardState(NULL);
 		if(key_states[SDL_SCANCODE_X]) {
 			quit = true;

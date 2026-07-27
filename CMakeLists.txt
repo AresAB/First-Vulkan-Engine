@@ -17,8 +17,9 @@ endif()
 include_directories(SYSTEM $ENV{VULKAN_SDK}/include)
 # These are not part of the SDK
 include_directories(external/tinyobj)
-include_directories(external/ktx/include)
-include_directories(external/ktx/other_include)
+
+set(KTX_GIT_VERSION_FULL "v4.3.2")
+add_subdirectory(external/ktx)
 
 find_package (Vulkan REQUIRED)
 
@@ -30,23 +31,6 @@ if (NOT WIN32)
         EXCLUDE_FROM_ALL
         SYSTEM)
     FetchContent_MakeAvailable(GLM)
-endif()
-
-set(KTX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/ktx)
-set(KTX_SOURCES
-    ${KTX_DIR}/lib/texture.c
-    ${KTX_DIR}/lib/hashlist.c
-    ${KTX_DIR}/lib/checkheader.c
-    ${KTX_DIR}/lib/swap.c
-    ${KTX_DIR}/lib/memstream.c
-    ${KTX_DIR}/lib/filestream.c
-    ${KTX_DIR}/lib/vkloader.c)
-add_library(ktx STATIC ${KTX_SOURCES})
-
-if (APPLE)
-    target_link_libraries(ktx PUBLIC $ENV{VULKAN_SDK}/lib/libvulkan.dylib)
-elseif (NOT WIN32)
-    target_link_libraries(ktx PUBLIC $ENV{VULKAN_SDK}/lib/libvulkan.so)
 endif()
 
 find_library(SDL_LIBRARY NAMES SDL3 HINTS "$ENV{VULKAN_SDK}/lib" REQUIRED)
