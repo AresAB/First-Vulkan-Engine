@@ -449,7 +449,7 @@ int main(int argc, char* argv[])
 			.height = surface_caps.currentExtent.height
 		},
 		.imageArrayLayers = 1,
-		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 		.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
 		.presentMode = VK_PRESENT_MODE_FIFO_KHR
@@ -1005,7 +1005,7 @@ int main(int argc, char* argv[])
 				break;
 			}
 			// Screenshot
-			if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_Q) {
+			if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_R) {
 				VkMemoryRequirements image_mem_reqs;
 				vkGetImageMemoryRequirements(device, sc_images[image_index], &image_mem_reqs);
 
@@ -1124,13 +1124,19 @@ int main(int argc, char* argv[])
 					no_error = false;
 				}
 				vmaDestroyBuffer(allocator, trans_image_buffer, trans_image_allocation);
+				uint32_t scrn_shot_i = 0;
+				std::filesystem::path scrn_shot_path = "./results/untitled_" + std::to_string(scrn_shot_i) + ".ktx";
 				if(no_error) {
-				err = ktxTexture2_WriteToNamedFile(scrn_shot, "screen_shot_test.ktx");
+				while(std::filesystem::exists(scrn_shot_path.string())) {
+					scrn_shot_i++;
+					scrn_shot_path = "./results/untitled_" + std::to_string(scrn_shot_i) + ".ktx";
+				}
+				err = ktxTexture2_WriteToNamedFile(scrn_shot, scrn_shot_path.string().c_str());
 				if(err != KTX_SUCCESS) {
 					std::cerr << "KTX ERROR: Failed to write screen shot ktxTexture to file at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
 				}
 				else {
-					std::cout << "Screenshot taken\n";
+					std::cout << "Screenshot \"" << scrn_shot_path.string() << "\" taken\n";
 				}}
 				ktxTexture2_Destroy(scrn_shot);
 			}
