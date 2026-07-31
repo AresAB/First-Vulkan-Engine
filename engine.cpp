@@ -63,7 +63,6 @@ struct Texture {
 	VkImageView view{ VK_NULL_HANDLE };
 	VkSampler sampler{ VK_NULL_HANDLE };
 };
-#define TEXTURE_COUNT 3
 struct Engine {
 	VkInstance instance{ VK_NULL_HANDLE };
 	VkPhysicalDevice physical_device{ VK_NULL_HANDLE };
@@ -97,8 +96,9 @@ struct Engine {
 	VkSemaphore* image_acquired_semaphores;
 	VkSemaphore* render_complete_semaphores;
 	VkCommandPool command_pool{ VK_NULL_HANDLE };
-	Texture textures[TEXTURE_COUNT];
-	VkDescriptorImageInfo texture_descriptors[TEXTURE_COUNT];
+	uint32_t texture_count;
+	Texture* textures;
+	VkDescriptorImageInfo* texture_descriptors;
 	VkDescriptorSetLayout desc_set_layout_tex;
 	VkDescriptorPool desc_pool;
 	VkDescriptorSet desc_set;
@@ -130,9 +130,10 @@ struct EngineCreateInfo {
 	float cam_mv_spd = 0.000005f;
 	float cam_rot_spd = 0.005f;
 	size_t shader_data_size;
+	uint32_t texture_count;
 };
 
-VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, VkQueue queue, VkCommandPool command_pool, const char* filename, Texture* p_tex){ 
+void load_texture_ktx(Engine* engine, uint32_t index, const char* filename){ 
 	ktxTexture* ktx_texture = nullptr;
 	ktxTexture_CreateFromNamedFile(filename, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
 	// VK_IMAGE_USAGE_TRANSFER_DST_BIT tells it that we want
@@ -156,10 +157,10 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 	VmaAllocationCreateInfo tex_image_allocCI{
 		.usage = VMA_MEMORY_USAGE_AUTO
 	};
-	chk(vmaCreateImage(allocator, &tex_imgCI, &tex_image_allocCI, &p_tex->image, &p_tex->allocation, nullptr), __LINE__);
+	chk(vmaCreateImage(engine->allocator, &tex_imgCI, &tex_image_allocCI, &engine->textures[index].image, &engine->textures[index].allocation, nullptr), __LINE__);
 	VkImageViewCreateInfo tex_viewCI {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = p_tex->image,
+		.image = engine->textures[index].image,
 		.viewType = VK_IMAGE_VIEW_TYPE_2D,
 		.format = tex_imgCI.format,
 		.subresourceRange {
@@ -168,7 +169,7 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 			.layerCount = 1
 		}
 	};
-	chk(vkCreateImageView(device, &tex_viewCI, nullptr, &p_tex->view), __LINE__);
+	chk(vkCreateImageView(engine->device, &tex_viewCI, nullptr, &engine->textures[index].view), __LINE__);
 
 	// We can't just memcpy images unfortunately, we have to
 	// upload the image data to a buffer and then issue a
@@ -186,7 +187,7 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 		.usage = VMA_MEMORY_USAGE_AUTO
 	};
 	VmaAllocationInfo temp_image_alloc_info;
-	chk(vmaCreateBuffer(allocator, &temp_image_bufferCI, &temp_image_allocCI, &temp_image_buffer, &temp_image_allocation, &temp_image_alloc_info), __LINE__);
+	chk(vmaCreateBuffer(engine->allocator, &temp_image_bufferCI, &temp_image_allocCI, &temp_image_buffer, &temp_image_allocation, &temp_image_alloc_info), __LINE__);
 	memcpy(temp_image_alloc_info.pMappedData, ktx_texture->pData, ktx_texture->dataSize);
 	// Now we need to make our command buffers in order to
 	// do the copy commands, and we'll want a fence to know
@@ -195,14 +196,14 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
 	};
 	VkFence temp_fence;
-	chk(vkCreateFence(device, &temp_fenceCI, nullptr, &temp_fence), __LINE__);
+	chk(vkCreateFence(engine->device, &temp_fenceCI, nullptr, &temp_fence), __LINE__);
 	VkCommandBuffer temp_cb;
 	VkCommandBufferAllocateInfo temp_cbAI {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-		.commandPool = command_pool,
+		.commandPool = engine->command_pool,
 		.commandBufferCount = 1
 	};
-	chk(vkAllocateCommandBuffers(device, &temp_cbAI, &temp_cb), __LINE__);
+	chk(vkAllocateCommandBuffers(engine->device, &temp_cbAI, &temp_cb), __LINE__);
 	// Now we need to record our copy command.
 	// The layout (tiling) of the image in memory determines
 	// what it can do, so we use vkCmdPipelineBarrier2 to
@@ -223,7 +224,7 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 		.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
 		.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		.image = p_tex->image,
+		.image = engine->textures[index].image,
 		.subresourceRange {
 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 			.levelCount = ktx_texture->numLevels,
@@ -254,7 +255,7 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 			}
 		};
 	}
-	vkCmdCopyBufferToImage(temp_cb, temp_image_buffer, p_tex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(ktx_texture->numLevels), copy_regions);
+	vkCmdCopyBufferToImage(temp_cb, temp_image_buffer, engine->textures[index].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(ktx_texture->numLevels), copy_regions);
 	VkImageMemoryBarrier2 barrier_tex_read {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 		.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -263,7 +264,7 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 		.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
 		.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-		.image = p_tex->image,
+		.image = engine->textures[index].image,
 		.subresourceRange {
 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 			.levelCount = ktx_texture->numLevels,
@@ -278,11 +279,11 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 		.commandBufferCount = 1,
 		.pCommandBuffers = &temp_cb
 	};
-	chk(vkQueueSubmit(queue, 1, &one_timeSI, temp_fence), __LINE__);
-	chk(vkWaitForFences(device, 1, &temp_fence, VK_TRUE, UINT64_MAX), __LINE__);
+	chk(vkQueueSubmit(engine->queue, 1, &one_timeSI, temp_fence), __LINE__);
+	chk(vkWaitForFences(engine->device, 1, &temp_fence, VK_TRUE, UINT64_MAX), __LINE__);
 	free(copy_regions);
-	vkDestroyFence(device, temp_fence, nullptr);
-	vmaDestroyBuffer(allocator, temp_image_buffer, temp_image_allocation);
+	vkDestroyFence(engine->device, temp_fence, nullptr);
+	vmaDestroyBuffer(engine->allocator, temp_image_buffer, temp_image_allocation);
 	// Wrap it up by defining the shader's sample behavior
 	VkSamplerCreateInfo samplerCI {
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -293,11 +294,11 @@ VkDescriptorImageInfo load_texture_ktx(VkDevice device, VmaAllocator allocator, 
 		.maxAnisotropy = 8.0f, // 8 is generally max
 		.maxLod = (float)ktx_texture->numLevels
 	};
-	chk(vkCreateSampler(device, &samplerCI, nullptr, &p_tex->sampler), __LINE__);
+	chk(vkCreateSampler(engine->device, &samplerCI, nullptr, &engine->textures[index].sampler), __LINE__);
 	ktxTexture_Destroy(ktx_texture);
-	return {
-		.sampler = p_tex->sampler,
-		.imageView = p_tex->view,
+	engine->texture_descriptors[index] = {
+		.sampler = engine->textures[index].sampler,
+		.imageView = engine->textures[index].view,
 		.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL
 	};
 }
@@ -761,87 +762,11 @@ Engine create_engine(EngineCreateInfo engineCI) {
 
 	// Loading Textures
 	// - - - - - - - - - - - - - - - -
+	// Mostly moved outside of engine.cpp
+	engine.texture_count = engineCI.texture_count;
+	engine.textures = (Texture*)malloc(sizeof(Texture) * engine.texture_count);
+	engine.texture_descriptors = (VkDescriptorImageInfo*)malloc(sizeof(VkDescriptorImageInfo) * engine.texture_count);
 
-	// Textures are images, which aren't really as nice to work with
-	// as buffers. We'll be using KTX, an image format created by
-	// Khronos that naturally supports mipmaps, 3D textures, and
-	// cubemaps. Here's a converter:
-	// https://developer.imaginationtech.com/solutions/pvrtextool/
-	uint32_t texture_count = static_cast<uint32_t>(TEXTURE_COUNT);
-	for(uint32_t i = 0; i < texture_count; i++) {
-		std::string filename = "assets/suzanne" + std::to_string(i) + ".ktx";
-		engine.texture_descriptors[i] = load_texture_ktx(engine.device, engine.allocator, engine.queue, engine.command_pool, filename.c_str(), engine.textures + i);
-	}
-
-	// Now that we have created our texture buffers, we need to
-	// describe how they are formatted to the GPU via descriptors.
-	// Unlike normal buffers, which have an extension we use to avoid
-	// having to use descriptors, images do not have such luxury.
-	// Descriptor indexing does help with the process luckily,
-	// allowing us to put all our descriptors in an array and index
-	// them in our shaders.
-	
-	// We are only using descriptors for images, so we make only one
-	// binding (for images), and define our Set Layout, which defines
-	// how our Application talks to our shaders.
-	VkDescriptorBindingFlags desc_binding_flag = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
-	VkDescriptorSetLayoutBindingFlagsCreateInfo desc_set_binding_flagsCI {
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-		.bindingCount = 1,
-		.pBindingFlags = &desc_binding_flag
-	};
-	VkDescriptorSetLayoutBinding desc_set_layout_binding_tex{
-		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, // we combine our texture images and samplers
-		.descriptorCount = texture_count,
-		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT // we are only accessing textures in fragment shaders for now
-	};
-	VkDescriptorSetLayoutCreateInfo desc_set_layout_texCI {
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.pNext = &desc_set_binding_flagsCI,
-		.bindingCount = 1,
-		.pBindings = &desc_set_layout_binding_tex
-	};
-	chk(vkCreateDescriptorSetLayout(engine.device, &desc_set_layout_texCI, nullptr, &engine.desc_set_layout_tex), __LINE__);
-
-	VkDescriptorPoolSize desc_pool_size {
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.descriptorCount = texture_count
-	};
-	VkDescriptorPoolCreateInfo desc_poolCI {
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-		.maxSets = 1,
-		.poolSizeCount = 1,
-		.pPoolSizes = &desc_pool_size
-	};
-	chk(vkCreateDescriptorPool(engine.device, &desc_poolCI, nullptr, &engine.desc_pool), __LINE__);
-
-	// We are making 1 descriptor set, and enough descriptors for
-	// each texture, as descriptor sets describe the interface, while
-	// descriptors actually hold onto the data.
-	VkDescriptorSetVariableDescriptorCountAllocateInfo var_desc_countAI {
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
-		.descriptorSetCount = 1,
-		.pDescriptorCounts = &texture_count
-	};
-	VkDescriptorSetAllocateInfo desc_setAI {
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.pNext = &var_desc_countAI,
-		.descriptorPool = engine.desc_pool,
-		.descriptorSetCount = 1,
-		.pSetLayouts = &engine.desc_set_layout_tex
-	};
-	chk(vkAllocateDescriptorSets(engine.device, &desc_setAI, &engine.desc_set), __LINE__);
-	// We have allocated our descriptor set, now we need to fill it
-	// with descriptors, which we set up in texture loading.
-	VkWriteDescriptorSet write_desc_set {
-		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		.dstSet = engine.desc_set,
-		.dstBinding = 0,
-		.descriptorCount = texture_count,
-		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.pImageInfo = engine.texture_descriptors
-	};
-	vkUpdateDescriptorSets(engine.device, 1, &write_desc_set, 0, nullptr);
 	// - - - - - - - - - - - - - - - -
 
 	// Loading Shaders
@@ -889,7 +814,173 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	};
 	chk(vkCreateShaderModule(engine.device, &shader_moduleCI, nullptr, &engine.shader_module), __LINE__);
 	// -------------------------------
+	return engine;
+}
 
+void engine_recreate_swapchain(Engine* engine) {
+	engine->update_swapchain = false;
+	chk(vkDeviceWaitIdle(engine->device), __LINE__);
+	chk(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(engine->physical_device, engine->surface, &engine->surface_caps), __LINE__);
+	engine->swapchainCI.oldSwapchain = engine->swapchain;
+	SDL_GetWindowSize(engine->window, &engine->window_width, &engine->window_height);
+	engine->swapchainCI.imageExtent = {.width = (uint32_t)engine->window_width, .height = (uint32_t)engine->window_height };
+	chk(vkCreateSwapchainKHR(engine->device, &engine->swapchainCI, nullptr, &engine->swapchain), __LINE__);
+	for(auto i = 0; i < engine->sc_image_count; i++) {
+		vkDestroyImageView(engine->device, engine->sc_image_views[i], nullptr);
+		vkDestroySemaphore(engine->device, engine->render_complete_semaphores[i], nullptr);
+	}
+	chk(vkGetSwapchainImagesKHR(engine->device, engine->swapchain, &engine->sc_image_count, nullptr), __LINE__);
+	engine->sc_images = (VkImage*)realloc(engine->sc_images, sizeof(VkImage) * engine->sc_image_count);
+	chk(vkGetSwapchainImagesKHR(engine->device, engine->swapchain, &engine->sc_image_count, engine->sc_images), __LINE__);
+	engine->sc_image_views = (VkImageView*)realloc(engine->sc_image_views, sizeof(VkImageView) * engine->sc_image_count);
+	engine->render_complete_semaphores = (VkSemaphore*)realloc(engine->render_complete_semaphores, sizeof(VkSemaphore) * engine->sc_image_count);
+	VkSemaphoreCreateInfo semaphoreCI {
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+	};
+	for(auto i = 0; i < engine->sc_image_count; i++) {
+		VkImageViewCreateInfo viewCI {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.image = engine->sc_images[i],
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = engine->swapchainCI.imageFormat,
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.levelCount = 1,
+				.layerCount = 1
+			}
+		};
+		chk(vkCreateImageView(engine->device, &viewCI, nullptr, &engine->sc_image_views[i]), __LINE__);
+		chk(vkCreateSemaphore(engine->device, &semaphoreCI, nullptr, &engine->render_complete_semaphores[i]), __LINE__);
+	}
+	vkDestroySwapchainKHR(engine->device, engine->swapchainCI.oldSwapchain, nullptr);
+	vmaDestroyImage(engine->allocator, engine->depth_image, engine->depth_image_allocation);
+	vkDestroyImageView(engine->device, engine->depth_image_view, nullptr);
+	engine->depth_imageCI.extent = {.width = (uint32_t)engine->window_width, .height = (uint32_t)engine->window_height, .depth = 1 };
+	VmaAllocationCreateInfo allocCI {
+		.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+	chk(vmaCreateImage(engine->allocator, &engine->depth_imageCI, &allocCI, &engine->depth_image, &engine->depth_image_allocation, nullptr), __LINE__);
+	VkImageViewCreateInfo viewCI {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = engine->depth_image,
+		.viewType = VK_IMAGE_VIEW_TYPE_2D,
+		.format = engine->depth_format,
+		.subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
+	};
+	chk(vkCreateImageView(engine->device, &viewCI, nullptr, &engine->depth_image_view), __LINE__);
+}
+
+void engine_load_texture_descriptors(Engine* engine, VkShaderStageFlags shader_access_flags) {
+	VkDescriptorBindingFlags desc_binding_flag = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+	VkDescriptorSetLayoutBindingFlagsCreateInfo desc_set_binding_flagsCI {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+		.bindingCount = 1,
+		.pBindingFlags = &desc_binding_flag
+	};
+	VkDescriptorSetLayoutBinding desc_set_layout_binding_tex{
+		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, // we combine our texture images and samplers
+		.descriptorCount = engine->texture_count,
+		.stageFlags = shader_access_flags
+	};
+	VkDescriptorSetLayoutCreateInfo desc_set_layout_texCI {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.pNext = &desc_set_binding_flagsCI,
+		.bindingCount = 1,
+		.pBindings = &desc_set_layout_binding_tex
+	};
+	chk(vkCreateDescriptorSetLayout(engine->device, &desc_set_layout_texCI, nullptr, &engine->desc_set_layout_tex), __LINE__);
+
+	VkDescriptorPoolSize desc_pool_size {
+		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.descriptorCount = engine->texture_count
+	};
+	VkDescriptorPoolCreateInfo desc_poolCI {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		.maxSets = 1,
+		.poolSizeCount = 1,
+		.pPoolSizes = &desc_pool_size
+	};
+	chk(vkCreateDescriptorPool(engine->device, &desc_poolCI, nullptr, &engine->desc_pool), __LINE__);
+
+	// We are making 1 descriptor set, and enough descriptors for
+	// each texture, as descriptor sets describe the interface, while
+	// descriptors actually hold onto the data.
+	VkDescriptorSetVariableDescriptorCountAllocateInfo var_desc_countAI {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
+		.descriptorSetCount = 1,
+		.pDescriptorCounts = &engine->texture_count
+	};
+	VkDescriptorSetAllocateInfo desc_setAI {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.pNext = &var_desc_countAI,
+		.descriptorPool = engine->desc_pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &engine->desc_set_layout_tex
+	};
+	chk(vkAllocateDescriptorSets(engine->device, &desc_setAI, &engine->desc_set), __LINE__);
+
+	// We have allocated our descriptor set, now we need to fill it
+	// with descriptors, which we set up in texture loading.
+	VkWriteDescriptorSet write_desc_set {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = engine->desc_set,
+		.dstBinding = 0,
+		.descriptorCount = engine->texture_count,
+		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.pImageInfo = engine->texture_descriptors
+	};
+	vkUpdateDescriptorSets(engine->device, 1, &write_desc_set, 0, nullptr);
+}
+
+
+void destroy_engine(Engine engine) {
+	free(engine.shader_data_buffers);
+	free(engine.command_buffers);
+	chk(vkDeviceWaitIdle(engine.device), __LINE__);
+	for(uint16_t i = 0; i < engine.frame_count; i++) {
+		vkDestroyFence(engine.device, engine.fences[i], nullptr);
+		vkDestroySemaphore(engine.device, engine.image_acquired_semaphores[i], nullptr);
+		vmaDestroyBuffer(engine.allocator, engine.shader_data_buffers[i].buffer, engine.shader_data_buffers[i].allocation);
+	}
+	free(engine.fences);
+	free(engine.image_acquired_semaphores);
+	for(auto i = 0; i < engine.sc_image_count; i++) {
+		vkDestroySemaphore(engine.device, engine.render_complete_semaphores[i], nullptr);
+		vkDestroyImageView(engine.device, engine.sc_image_views[i], nullptr);
+	}
+	free(engine.render_complete_semaphores);
+	vmaDestroyImage(engine.allocator, engine.depth_image, engine.depth_image_allocation);
+	vkDestroyImageView(engine.device, engine.depth_image_view, nullptr);
+	free(engine.sc_images);
+	free(engine.sc_image_views);
+	vmaDestroyBuffer(engine.allocator, engine.v_buffer, engine.v_buffer_allocation);
+	for(auto i = 0; i < engine.texture_count; i++) {
+		vkDestroyImageView(engine.device, engine.textures[i].view, nullptr);
+		vkDestroySampler(engine.device, engine.textures[i].sampler, nullptr);
+		vmaDestroyImage(engine.allocator, engine.textures[i].image, engine.textures[i].allocation);
+	}
+	free(engine.textures);
+	free(engine.texture_descriptors);
+	vkDestroyDescriptorSetLayout(engine.device, engine.desc_set_layout_tex, nullptr);
+	vkDestroyDescriptorPool(engine.device, engine.desc_pool, nullptr);
+	vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, nullptr);
+	vkDestroyPipeline(engine.device, engine.pipeline, nullptr);
+	vkDestroySwapchainKHR(engine.device, engine.swapchain, nullptr);
+	vkDestroySurfaceKHR(engine.instance, engine.surface, nullptr);
+	vkDestroyCommandPool(engine.device, engine.command_pool, nullptr);
+	vkDestroyShaderModule(engine.device, engine.shader_module, nullptr);
+
+	vmaDestroyAllocator(engine.allocator);
+	SDL_DestroyWindow(engine.window);
+	SDL_QuitSubSystem(SDL_INIT_VIDEO);
+	SDL_Quit();
+	vkDestroyDevice(engine.device, nullptr);
+	vkDestroyInstance(engine.instance, nullptr);
+}
+
+
+void engine_create_pipeline(Engine* engine) {
 	// Graphics Pipeline
 	// - - - - - - - - - - - - - - - -
 
@@ -909,11 +1000,11 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	VkPipelineLayoutCreateInfo pipeline_layoutCI {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount = 1,
-		.pSetLayouts = &engine.desc_set_layout_tex,
+		.pSetLayouts = &engine->desc_set_layout_tex,
 		.pushConstantRangeCount = 1,
 		.pPushConstantRanges = &push_constant_range
 	};
-	chk(vkCreatePipelineLayout(engine.device, &pipeline_layoutCI, nullptr, &engine.pipeline_layout), __LINE__);
+	chk(vkCreatePipelineLayout(engine->device, &pipeline_layoutCI, nullptr, &engine->pipeline_layout), __LINE__);
 
 	// Describe how our vertex attributes are layed out in memory.
 	VkVertexInputBindingDescription vertex_binding_desc {
@@ -950,8 +1041,8 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	// with a tutorial on them linked here:
 // https://www.khronos.org/blog/you-can-use-vulkan-without-pipelines-today
 	VkPipelineShaderStageCreateInfo shader_stages[2] = {
-		{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = engine.shader_module, .pName = "main" },
-		{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = engine.shader_module, .pName = "main" }
+		{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = engine->shader_module, .pName = "main" },
+		{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = engine->shader_module, .pName = "main" }
 	};
 	// We will make our viewport dynamic since we don't want to
 	// "recompile" the pipeline every time we resize the window.
@@ -980,8 +1071,8 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	VkPipelineRenderingCreateInfo renderingCI {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
 		.colorAttachmentCount = 1,
-		.pColorAttachmentFormats = &engine.swapchainCI.imageFormat,
-		.depthAttachmentFormat = engine.depth_format
+		.pColorAttachmentFormats = &engine->swapchainCI.imageFormat,
+		.depthAttachmentFormat = engine->depth_format
 	};
 	// Set to default (we aren't really using them).
 	VkPipelineColorBlendAttachmentState blend_attachment {
@@ -1017,54 +1108,8 @@ Engine create_engine(EngineCreateInfo engineCI) {
 		.pDepthStencilState = &depth_stencil_stateCI,
 		.pColorBlendState = &color_blend_stateCI,
 		.pDynamicState = &dynamic_stateCI,
-		.layout = engine.pipeline_layout
+		.layout = engine->pipeline_layout
 	};
-	chk(vkCreateGraphicsPipelines(engine.device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &engine.pipeline), __LINE__);
+	chk(vkCreateGraphicsPipelines(engine->device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &engine->pipeline), __LINE__);
 	// - - - - - - - - - - - - - - - -
-	return engine;
 }
-
-void destroy_engine(Engine engine) {
-	free(engine.shader_data_buffers);
-	free(engine.command_buffers);
-	chk(vkDeviceWaitIdle(engine.device), __LINE__);
-	for(uint16_t i = 0; i < engine.frame_count; i++) {
-		vkDestroyFence(engine.device, engine.fences[i], nullptr);
-		vkDestroySemaphore(engine.device, engine.image_acquired_semaphores[i], nullptr);
-		vmaDestroyBuffer(engine.allocator, engine.shader_data_buffers[i].buffer, engine.shader_data_buffers[i].allocation);
-	}
-	free(engine.fences);
-	free(engine.image_acquired_semaphores);
-	for(auto i = 0; i < engine.sc_image_count; i++) {
-		vkDestroySemaphore(engine.device, engine.render_complete_semaphores[i], nullptr);
-		vkDestroyImageView(engine.device, engine.sc_image_views[i], nullptr);
-	}
-	free(engine.render_complete_semaphores);
-	vmaDestroyImage(engine.allocator, engine.depth_image, engine.depth_image_allocation);
-	vkDestroyImageView(engine.device, engine.depth_image_view, nullptr);
-	free(engine.sc_images);
-	free(engine.sc_image_views);
-	vmaDestroyBuffer(engine.allocator, engine.v_buffer, engine.v_buffer_allocation);
-	for(uint16_t i = 0; i < TEXTURE_COUNT; i++) {
-		vkDestroyImageView(engine.device, engine.textures[i].view, nullptr);
-		vkDestroySampler(engine.device, engine.textures[i].sampler, nullptr);
-		vmaDestroyImage(engine.allocator, engine.textures[i].image, engine.textures[i].allocation);
-	}
-	vkDestroyDescriptorSetLayout(engine.device, engine.desc_set_layout_tex, nullptr);
-	vkDestroyDescriptorPool(engine.device, engine.desc_pool, nullptr);
-	vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, nullptr);
-	vkDestroyPipeline(engine.device, engine.pipeline, nullptr);
-	vkDestroySwapchainKHR(engine.device, engine.swapchain, nullptr);
-	vkDestroySurfaceKHR(engine.instance, engine.surface, nullptr);
-	vkDestroyCommandPool(engine.device, engine.command_pool, nullptr);
-	vkDestroyShaderModule(engine.device, engine.shader_module, nullptr);
-
-	vmaDestroyAllocator(engine.allocator);
-	SDL_DestroyWindow(engine.window);
-	SDL_QuitSubSystem(SDL_INIT_VIDEO);
-	SDL_Quit();
-	vkDestroyDevice(engine.device, nullptr);
-	vkDestroyInstance(engine.instance, nullptr);
-}
-
-

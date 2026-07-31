@@ -7,7 +7,7 @@ struct ShaderData {
 	glm::vec4 light_pos{ 0.0f, -10.0f, 10.0f, 0.0f };
 };
 
-void engine_polling_events(Engine *engine) {
+void engine_poll_events(Engine *engine) {
 	SDL_Event event;
 	while(SDL_PollEvent(&event)) {
 		// Window Close Button
@@ -158,7 +158,7 @@ void engine_polling_events(Engine *engine) {
 	}
 }
 
-void engine_polling_scancodes(Engine* engine) {
+void engine_poll_scancodes(Engine* engine) {
 	engine->deltatime = SDL_GetTicks() - engine->last_time / 1000.0f;
 	engine->last_time = SDL_GetTicks();
 	const bool* key_states = SDL_GetKeyboardState(NULL);
@@ -223,7 +223,7 @@ void engine_polling_scancodes(Engine* engine) {
 void engine_update_shader_data(Engine* engine, ShaderData* data) {
 	data->projection = glm::perspective(glm::radians(45.0f), (float)engine->window_width / (float)engine->window_height, 0.1f, 32.0f);
 	data->view = glm::translate(engine->cam_rot_mat, engine->cam_pos);
-	for(auto i = 0; i < TEXTURE_COUNT; i++) {
+	for(auto i = 0; i < 3; i++) {
 		auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, 0.0f, 0.0f);
 		data->model[i] = glm::translate(glm::mat4(1.0f), instance_pos);
 	}
@@ -240,7 +240,7 @@ void engine_render_loop(Engine engine) {
 		chk_swapchain(vkAcquireNextImageKHR(engine.device, engine.swapchain, UINT64_MAX, engine.image_acquired_semaphores[engine.frame_index], VK_NULL_HANDLE, &engine.image_index), &engine.update_swapchain, __LINE__);
 
 		// First round of input handling
-		engine_polling_events(&engine);
+		engine_poll_events(&engine);
 
 		// Update shader data
 		ShaderData shader_data{};
@@ -342,6 +342,10 @@ void engine_render_loop(Engine engine) {
 		}};
 		vkCmdSetScissor(cb, 0, 1, &scissor);
 
+		// -Ligma
+		// Bind shader pipeline, then render v_buffer
+		// --------------------------
+
 		vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, engine.pipeline);
 		VkDeviceSize v_offset = 0;
 		vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, engine.pipeline_layout, 0, 1, &engine.desc_set, 0, nullptr);
@@ -350,6 +354,8 @@ void engine_render_loop(Engine engine) {
 		vkCmdPushConstants(cb, engine.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine.shader_data_buffers[engine.frame_index].device_address);
 
 		vkCmdDrawIndexed(cb, engine.indices_count, 3, 0, 0, 0);
+
+		// --------------------
 
 		vkCmdEndRendering(cb);
 		VkImageMemoryBarrier2 barrier_present {
@@ -413,70 +419,28 @@ void engine_render_loop(Engine engine) {
 		chk_swapchain(vkQueuePresentKHR(engine.queue, &present_info), &engine.update_swapchain, __LINE__);
 
 		// Poll events part 2
-		engine_polling_scancodes(&engine);
+		engine_poll_scancodes(&engine);
 		
 		// Recreate Swapchain
 		if(engine.update_swapchain) {
-			engine.update_swapchain = false;
-			chk(vkDeviceWaitIdle(engine.device), __LINE__);
-			chk(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(engine.physical_device, engine.surface, &engine.surface_caps), __LINE__);
-			engine.swapchainCI.oldSwapchain = engine.swapchain;
-			SDL_GetWindowSize(engine.window, &engine.window_width, &engine.window_height);
-			engine.swapchainCI.imageExtent = {.width = (uint32_t)engine.window_width, .height = (uint32_t)engine.window_height };
-			chk(vkCreateSwapchainKHR(engine.device, &engine.swapchainCI, nullptr, &engine.swapchain), __LINE__);
-			for(auto i = 0; i < engine.sc_image_count; i++) {
-				vkDestroyImageView(engine.device, engine.sc_image_views[i], nullptr);
-				vkDestroySemaphore(engine.device, engine.render_complete_semaphores[i], nullptr);
-			}
-			chk(vkGetSwapchainImagesKHR(engine.device, engine.swapchain, &engine.sc_image_count, nullptr), __LINE__);
-			engine.sc_images = (VkImage*)realloc(engine.sc_images, sizeof(VkImage) * engine.sc_image_count);
-			chk(vkGetSwapchainImagesKHR(engine.device, engine.swapchain, &engine.sc_image_count, engine.sc_images), __LINE__);
-			engine.sc_image_views = (VkImageView*)realloc(engine.sc_image_views, sizeof(VkImageView) * engine.sc_image_count);
-			engine.render_complete_semaphores = (VkSemaphore*)realloc(engine.render_complete_semaphores, sizeof(VkSemaphore) * engine.sc_image_count);
-			VkSemaphoreCreateInfo semaphoreCI {
-				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-			};
-			for(auto i = 0; i < engine.sc_image_count; i++) {
-				VkImageViewCreateInfo viewCI {
-					.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-					.image = engine.sc_images[i],
-					.viewType = VK_IMAGE_VIEW_TYPE_2D,
-					.format = engine.swapchainCI.imageFormat,
-					.subresourceRange = {
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.levelCount = 1,
-						.layerCount = 1
-					}
-				};
-				chk(vkCreateImageView(engine.device, &viewCI, nullptr, &engine.sc_image_views[i]), __LINE__);
-				chk(vkCreateSemaphore(engine.device, &semaphoreCI, nullptr, &engine.render_complete_semaphores[i]), __LINE__);
-			}
-			vkDestroySwapchainKHR(engine.device, engine.swapchainCI.oldSwapchain, nullptr);
-			vmaDestroyImage(engine.allocator, engine.depth_image, engine.depth_image_allocation);
-			vkDestroyImageView(engine.device, engine.depth_image_view, nullptr);
-			engine.depth_imageCI.extent = {.width = (uint32_t)engine.window_width, .height = (uint32_t)engine.window_height, .depth = 1 };
-			VmaAllocationCreateInfo allocCI {
-				.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-				.usage = VMA_MEMORY_USAGE_AUTO
-			};
-			chk(vmaCreateImage(engine.allocator, &engine.depth_imageCI, &allocCI, &engine.depth_image, &engine.depth_image_allocation, nullptr), __LINE__);
-			VkImageViewCreateInfo viewCI {
-				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.image = engine.depth_image,
-				.viewType = VK_IMAGE_VIEW_TYPE_2D,
-				.format = engine.depth_format,
-				.subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
-			};
-			chk(vkCreateImageView(engine.device, &viewCI, nullptr, &engine.depth_image_view), __LINE__);
+			engine_recreate_swapchain(&engine);
 		}
 	}
 }
 
 int main() {
 	EngineCreateInfo engineCI{ 
-		.shader_data_size = sizeof(ShaderData)
+		.shader_data_size = sizeof(ShaderData),
+		.texture_count = 3
 	};
 	Engine engine = create_engine(engineCI);
+	
+	load_texture_ktx(&engine, 0, "assets/suzanne0.ktx");
+	load_texture_ktx(&engine, 1, "assets/suzanne1.ktx");
+	load_texture_ktx(&engine, 2, "assets/suzanne2.ktx");
+	engine_load_texture_descriptors(&engine, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+	engine_create_pipeline(&engine);
 	engine_render_loop(engine);
 	destroy_engine(engine);
 }
