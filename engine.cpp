@@ -90,7 +90,8 @@ struct Engine {
 	VkBuffer v_buffer{ VK_NULL_HANDLE };
 	VmaAllocation v_buffer_allocation;
 	uint16_t frame_count;
-	ShaderDataBuffer* shader_data_buffers;
+	uint32_t shader_count;
+	ShaderDataBuffer** shader_data_buffers;
 	VkCommandBuffer* command_buffers;
 	VkFence* fences;
 	VkSemaphore* image_acquired_semaphores;
@@ -102,9 +103,9 @@ struct Engine {
 	VkDescriptorSetLayout desc_set_layout_tex;
 	VkDescriptorPool desc_pool;
 	VkDescriptorSet desc_set;
-	VkShaderModule shader_module;
+	VkShaderModule* shader_modules;
 	VkPipelineLayout pipeline_layout{ VK_NULL_HANDLE };
-	VkPipeline pipeline{ VK_NULL_HANDLE };
+	VkPipeline* pipelines;
 	bool closing = false;
 	bool update_swapchain = false;
 	uint32_t frame_index = 0;
@@ -129,11 +130,15 @@ struct EngineCreateInfo {
 	glm::mat4 cam_rot_mat{ glm::mat4(1.0f) };
 	float cam_mv_spd = 0.000005f;
 	float cam_rot_spd = 0.005f;
-	size_t shader_data_size;
 	uint32_t texture_count;
+	uint32_t shader_count;
 };
 
-void load_texture_ktx(Engine* engine, uint32_t index, const char* filename){ 
+void engine_load_texture_ktx(Engine* engine, uint32_t index, const char* filename){ 
+	if(index >= engine->texture_count){
+		std::cerr << "ERROR: Loading texture at index " << index << " when there are only " << engine->texture_count << " texture elements\n";
+	}
+
 	ktxTexture* ktx_texture = nullptr;
 	ktxTexture_CreateFromNamedFile(filename, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
 	// VK_IMAGE_USAGE_TRANSFER_DST_BIT tells it that we want
@@ -316,6 +321,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	engine.cam_rot_mat = engine.og_cam_rot_mat;
 	engine.cam_mv_spd = engineCI.cam_mv_spd;
 	engine.cam_rot_spd = engineCI.cam_rot_spd;
+	engine.shader_count = engineCI.shader_count;
 
 	// Create our Vulkan Instance
 	// -------------------------------
@@ -680,36 +686,11 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	// frames while GPU is processing previous ones (refered to
 	// commonly as "frames in flight").
 	// Stick to only 2-3 frame buffers to avoid high latency.
-	engine.shader_data_buffers = (ShaderDataBuffer*)malloc(engine.frame_count * sizeof(ShaderDataBuffer));
 	engine.command_buffers = (VkCommandBuffer*)malloc(engine.frame_count * sizeof(VkCommandBuffer));
 	engine.fences = (VkFence*)malloc(engine.frame_count * sizeof(VkFence));
 	engine.image_acquired_semaphores = (VkSemaphore*)malloc(engine.frame_count * sizeof(VkSemaphore));
 	// - - - - - - - - - - - - - - - -
 	
-	// Shader Data Buffers
-	// -------------------------------
-
-	// Allocate each shader data buffer and get their device
-	// address so we can access them in shaders without descriptors
-	for(auto i = 0; i < engine.frame_count; i++) {
-		VkBufferCreateInfo shader_data_bufferCI {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.size = engineCI.shader_data_size,
-			.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-		};
-		VmaAllocationCreateInfo shader_data_buffer_allocCI {
-			.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
-			.usage = VMA_MEMORY_USAGE_AUTO
-		};
-		chk(vmaCreateBuffer(engine.allocator, &shader_data_bufferCI, &shader_data_buffer_allocCI, &engine.shader_data_buffers[i].buffer, &engine.shader_data_buffers[i].allocation, &engine.shader_data_buffers[i].allocation_info), __LINE__);
-		VkBufferDeviceAddressInfo shader_data_buffer_device_address_info {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-			.buffer = engine.shader_data_buffers[i].buffer
-		};
-		engine.shader_data_buffers[i].device_address = vkGetBufferDeviceAddress(engine.device, &shader_data_buffer_device_address_info);
-	}
-	// -------------------------------
-
 	// Synchronization Objects
 	// - - - - - - - - - - - - - - - -
 	
@@ -769,51 +750,10 @@ Engine create_engine(EngineCreateInfo engineCI) {
 
 	// - - - - - - - - - - - - - - - -
 
-	// Loading Shaders
-	// -------------------------------
+	engine.shader_data_buffers = (ShaderDataBuffer**)malloc(engine.shader_count * sizeof(ShaderDataBuffer*));
+	engine.shader_modules = (VkShaderModule*)malloc(engine.shader_count * sizeof(VkShaderModule));
+	engine.pipelines = (VkPipeline*)malloc(engine.shader_count * sizeof(VkPipeline));
 
-	// Shaders need to be compiled to SPIR-V, we'll be writing them
-	// in Slang for this engine so we need to convert them.
-	// We can compile them offline via Slang's command line compiler,
-	// but instead we'll just compile at runtime via Slang's library.
-
-	// We start by making a "Slang Session"
-	Slang::ComPtr<slang::IGlobalSession> slang_global_session;
-	slang::createGlobalSession(slang_global_session.writeRef());
-	auto slang_targets { std::to_array<slang::TargetDesc>({ {
-		.format = SLANG_SPIRV,
-		.profile = slang_global_session->findProfile("spriv_1_4")
-	} })};
-	auto slang_options { std::to_array<slang::CompilerOptionEntry>({ {
-		slang::CompilerOptionName::EmitSpirvDirectly,
-		{slang::CompilerOptionValueKind::Int, 1}
-	} })};
-	slang::SessionDesc slang_session_desc {
-		.targets = slang_targets.data(),
-		.targetCount = SlangInt(slang_targets.size()),
-		.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
-		.compilerOptionEntries = slang_options.data(),
-		.compilerOptionEntryCount = uint32_t(slang_options.size())
-	};
-	Slang::ComPtr<slang::ISession> slang_session;
-	slang_global_session->createSession(slang_session_desc, slang_session.writeRef());
-
-	// Now we can load the shader file into SPIR-V format.
-	Slang::ComPtr<slang::IModule> slang_module {
-		slang_session->loadModuleFromSource("triangle", "assets/shader.slang", nullptr, nullptr)
-	};
-	Slang::ComPtr<ISlangBlob> spirv_shader;
-	slang_module->getTargetCode(0, spirv_shader.writeRef());
-
-	// We need to make a module (container) for our shader to pass
-	// into our graphics pipeline.
-	VkShaderModuleCreateInfo shader_moduleCI {
-		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = spirv_shader->getBufferSize(),
-		.pCode = (uint32_t*)spirv_shader->getBufferPointer()
-	};
-	chk(vkCreateShaderModule(engine.device, &shader_moduleCI, nullptr, &engine.shader_module), __LINE__);
-	// -------------------------------
 	return engine;
 }
 
@@ -933,62 +873,7 @@ void engine_load_texture_descriptors(Engine* engine, VkShaderStageFlags shader_a
 	vkUpdateDescriptorSets(engine->device, 1, &write_desc_set, 0, nullptr);
 }
 
-
-void destroy_engine(Engine engine) {
-	free(engine.shader_data_buffers);
-	free(engine.command_buffers);
-	chk(vkDeviceWaitIdle(engine.device), __LINE__);
-	for(uint16_t i = 0; i < engine.frame_count; i++) {
-		vkDestroyFence(engine.device, engine.fences[i], nullptr);
-		vkDestroySemaphore(engine.device, engine.image_acquired_semaphores[i], nullptr);
-		vmaDestroyBuffer(engine.allocator, engine.shader_data_buffers[i].buffer, engine.shader_data_buffers[i].allocation);
-	}
-	free(engine.fences);
-	free(engine.image_acquired_semaphores);
-	for(auto i = 0; i < engine.sc_image_count; i++) {
-		vkDestroySemaphore(engine.device, engine.render_complete_semaphores[i], nullptr);
-		vkDestroyImageView(engine.device, engine.sc_image_views[i], nullptr);
-	}
-	free(engine.render_complete_semaphores);
-	vmaDestroyImage(engine.allocator, engine.depth_image, engine.depth_image_allocation);
-	vkDestroyImageView(engine.device, engine.depth_image_view, nullptr);
-	free(engine.sc_images);
-	free(engine.sc_image_views);
-	vmaDestroyBuffer(engine.allocator, engine.v_buffer, engine.v_buffer_allocation);
-	for(auto i = 0; i < engine.texture_count; i++) {
-		vkDestroyImageView(engine.device, engine.textures[i].view, nullptr);
-		vkDestroySampler(engine.device, engine.textures[i].sampler, nullptr);
-		vmaDestroyImage(engine.allocator, engine.textures[i].image, engine.textures[i].allocation);
-	}
-	free(engine.textures);
-	free(engine.texture_descriptors);
-	vkDestroyDescriptorSetLayout(engine.device, engine.desc_set_layout_tex, nullptr);
-	vkDestroyDescriptorPool(engine.device, engine.desc_pool, nullptr);
-	vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, nullptr);
-	vkDestroyPipeline(engine.device, engine.pipeline, nullptr);
-	vkDestroySwapchainKHR(engine.device, engine.swapchain, nullptr);
-	vkDestroySurfaceKHR(engine.instance, engine.surface, nullptr);
-	vkDestroyCommandPool(engine.device, engine.command_pool, nullptr);
-	vkDestroyShaderModule(engine.device, engine.shader_module, nullptr);
-
-	vmaDestroyAllocator(engine.allocator);
-	SDL_DestroyWindow(engine.window);
-	SDL_QuitSubSystem(SDL_INIT_VIDEO);
-	SDL_Quit();
-	vkDestroyDevice(engine.device, nullptr);
-	vkDestroyInstance(engine.instance, nullptr);
-}
-
-
-void engine_create_pipeline(Engine* engine) {
-	// Graphics Pipeline
-	// - - - - - - - - - - - - - - - -
-
-	// OpenGL's pipeline is unoptimized because you can change state
-	// any time, while Vulkan makes you "compile" (define) your
-	// pipeline's state progression, allowing for optimization.
-	// Still there are options to make some of your states dynamic.
-
+void engine_create_pipeline_layout(Engine* engine) {
 	// First we make our pipeline layout, specifically rasterization.
 	// Our push constants are values we can give to our shader w/out
 	// going through a buffer.
@@ -1005,6 +890,90 @@ void engine_create_pipeline(Engine* engine) {
 		.pPushConstantRanges = &push_constant_range
 	};
 	chk(vkCreatePipelineLayout(engine->device, &pipeline_layoutCI, nullptr, &engine->pipeline_layout), __LINE__);
+}
+
+void engine_load_shader(Engine* engine, uint32_t index, size_t data_size, const char* filename) {
+	if(index >= engine->shader_count){
+		std::cerr << "ERROR: Loading shader at index " << index << " when there are only " << engine->shader_count << " shader buffer elements\n";
+	}
+
+	// Allocate each shader data buffer and get their device
+	// address so we can access them in shaders without descriptors
+	engine->shader_data_buffers[index] = (ShaderDataBuffer*)malloc(sizeof(ShaderDataBuffer) * engine->frame_count);
+	for(auto i = 0; i < engine->frame_count; i++) {
+		VkBufferCreateInfo shader_data_bufferCI {
+			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			.size = data_size,
+			.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+		};
+		VmaAllocationCreateInfo shader_data_buffer_allocCI {
+			.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+			.usage = VMA_MEMORY_USAGE_AUTO
+		};
+		chk(vmaCreateBuffer(engine->allocator, &shader_data_bufferCI, &shader_data_buffer_allocCI, &engine->shader_data_buffers[index][i].buffer, &engine->shader_data_buffers[index][i].allocation, &engine->shader_data_buffers[index][i].allocation_info), __LINE__);
+		VkBufferDeviceAddressInfo shader_data_buffer_device_address_info {
+			.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+			.buffer = engine->shader_data_buffers[index][i].buffer
+		};
+		engine->shader_data_buffers[index][i].device_address = vkGetBufferDeviceAddress(engine->device, &shader_data_buffer_device_address_info);
+	}
+
+	// Loading Shaders
+	// -------------------------------
+
+	// Shaders need to be compiled to SPIR-V, we'll be writing them
+	// in Slang for this engine so we need to convert them.
+	// We can compile them offline via Slang's command line compiler,
+	// but instead we'll just compile at runtime via Slang's library.
+
+	// We start by making a "Slang Session"
+	Slang::ComPtr<slang::IGlobalSession> slang_global_session;
+	slang::createGlobalSession(slang_global_session.writeRef());
+	auto slang_targets { std::to_array<slang::TargetDesc>({ {
+		.format = SLANG_SPIRV,
+		.profile = slang_global_session->findProfile("spriv_1_4")
+	} })};
+	auto slang_options { std::to_array<slang::CompilerOptionEntry>({ {
+		slang::CompilerOptionName::EmitSpirvDirectly,
+		{slang::CompilerOptionValueKind::Int, 1}
+	} })};
+	slang::SessionDesc slang_session_desc {
+		.targets = slang_targets.data(),
+		.targetCount = SlangInt(slang_targets.size()),
+		.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
+		.compilerOptionEntries = slang_options.data(),
+		.compilerOptionEntryCount = uint32_t(slang_options.size())
+	};
+	Slang::ComPtr<slang::ISession> slang_session;
+	slang_global_session->createSession(slang_session_desc, slang_session.writeRef());
+
+	// Now we can load the shader file into SPIR-V format.
+	Slang::ComPtr<slang::IModule> slang_module {
+		slang_session->loadModuleFromSource("triangle", filename, nullptr, nullptr)
+	};
+	Slang::ComPtr<ISlangBlob> spirv_shader;
+	slang_module->getTargetCode(0, spirv_shader.writeRef());
+
+	// We need to make a module (container) for our shader to pass
+	// into our graphics pipeline.
+	VkShaderModuleCreateInfo shader_moduleCI {
+		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = spirv_shader->getBufferSize(),
+		.pCode = (uint32_t*)spirv_shader->getBufferPointer()
+	};
+	chk(vkCreateShaderModule(engine->device, &shader_moduleCI, nullptr, &engine->shader_modules[index]), __LINE__);
+	// -------------------------------
+}
+
+void engine_create_basic_pipelines(Engine* engine, uint32_t* indices, uint32_t indices_size) {
+	if(indices[indices_size-1] >= engine->shader_count){
+		std::cerr << "ERROR: Creating pipeline at index " << indices[indices_size-1] << " when there are only " << engine->shader_count << " pipeline elements\n";
+	}
+
+	// OpenGL's pipeline is unoptimized because you can change state
+	// any time, while Vulkan makes you "compile" (define) your
+	// pipeline's state progression, allowing for optimization.
+	// Still there are options to make some of your states dynamic.
 
 	// Describe how our vertex attributes are layed out in memory.
 	VkVertexInputBindingDescription vertex_binding_desc {
@@ -1032,18 +1001,7 @@ void engine_create_pipeline(Engine* engine) {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
 		.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 	};
-	// -Ligma
-	// Currently the tutorial claims that to use different shaders,
-	// you have to make multiple pipelines, which sounds absurd given
-	// that scenes usually have many different objects with different
-	// shaders going on, so I need to look into the reality of this
-	// situation. A lead might be looking into VK_EXT_shader_objects,
-	// with a tutorial on them linked here:
-// https://www.khronos.org/blog/you-can-use-vulkan-without-pipelines-today
-	VkPipelineShaderStageCreateInfo shader_stages[2] = {
-		{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = engine->shader_module, .pName = "main" },
-		{ .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = engine->shader_module, .pName = "main" }
-	};
+
 	// We will make our viewport dynamic since we don't want to
 	// "recompile" the pipeline every time we resize the window.
 	// The "scissor" is what defines the cutoff point where vertices
@@ -1094,22 +1052,99 @@ void engine_create_pipeline(Engine* engine) {
 		.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
 	};
 
-	// Now we set up the pipeline itself.
-	VkGraphicsPipelineCreateInfo pipelineCI {
-		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-		.pNext = &renderingCI,
-		.stageCount = 2,
-		.pStages = shader_stages,
-		.pVertexInputState = &vertex_input_stateCI,
-		.pInputAssemblyState = &input_assembly_stateCI,
-		.pViewportState = &viewport_stateCI,
-		.pRasterizationState = &rasterization_stateCI,
-		.pMultisampleState = &multisample_stateCI,
-		.pDepthStencilState = &depth_stencil_stateCI,
-		.pColorBlendState = &color_blend_stateCI,
-		.pDynamicState = &dynamic_stateCI,
-		.layout = engine->pipeline_layout
-	};
-	chk(vkCreateGraphicsPipelines(engine->device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &engine->pipeline), __LINE__);
-	// - - - - - - - - - - - - - - - -
+	VkPipelineShaderStageCreateInfo* shader_stages = (VkPipelineShaderStageCreateInfo*)malloc(sizeof(VkPipelineShaderStageCreateInfo) * indices_size * 2);
+	VkGraphicsPipelineCreateInfo* pipelineCIs = (VkGraphicsPipelineCreateInfo*)malloc(sizeof(VkGraphicsPipelineCreateInfo) * indices_size);
+	for(auto i = 0; i < indices_size; i++) {
+		shader_stages[i*2] = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = engine->shader_modules[indices[i]], .pName = "main" };
+		shader_stages[i*2 + 1] = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = engine->shader_modules[indices[i]], .pName = "main" };
+
+		// Now we set up the pipeline itself.
+		VkGraphicsPipelineCreateInfo pipelineCI {
+			.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+			.pNext = &renderingCI,
+			.stageCount = 2,
+			.pStages = &shader_stages[i*2],
+			.pVertexInputState = &vertex_input_stateCI,
+			.pInputAssemblyState = &input_assembly_stateCI,
+			.pViewportState = &viewport_stateCI,
+			.pRasterizationState = &rasterization_stateCI,
+			.pMultisampleState = &multisample_stateCI,
+			.pDepthStencilState = &depth_stencil_stateCI,
+			.pColorBlendState = &color_blend_stateCI,
+			.pDynamicState = &dynamic_stateCI,
+			.layout = engine->pipeline_layout
+		};
+		if(i > 0) {
+			pipelineCI.flags = VK_PIPELINE_CREATE_DERIVATIVE_BIT;
+			pipelineCI.basePipelineIndex = 0;
+		}
+		else if(indices_size > 1) {
+			pipelineCI.flags = VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+		}
+		pipelineCIs[i] = pipelineCI;
+	}
+	VkPipeline* pipelines = (VkPipeline*)malloc(sizeof(VkPipeline) * indices_size);
+	chk(vkCreateGraphicsPipelines(engine->device, VK_NULL_HANDLE, indices_size, pipelineCIs, nullptr, pipelines), __LINE__);
+	free(shader_stages);
+	free(pipelineCIs);
+	for(auto i = 0; i < indices_size; i++) {
+		engine->pipelines[indices[i]] = pipelines[i];
+	}
+	free(pipelines);
 }
+
+void destroy_engine(Engine engine) {
+	free(engine.shader_data_buffers);
+	free(engine.command_buffers);
+	chk(vkDeviceWaitIdle(engine.device), __LINE__);
+	for(auto i = 0; i < engine.frame_count; i++) {
+		vkDestroyFence(engine.device, engine.fences[i], nullptr);
+		vkDestroySemaphore(engine.device, engine.image_acquired_semaphores[i], nullptr);
+	}
+	free(engine.fences);
+	free(engine.image_acquired_semaphores);
+	for(auto i = 0; i < engine.shader_count; i++) {
+		vkDestroyShaderModule(engine.device, engine.shader_modules[i], nullptr);
+		for(auto j = 0; j < engine.frame_count; j++) {
+			vmaDestroyBuffer(engine.allocator, engine.shader_data_buffers[i][j].buffer, engine.shader_data_buffers[i][j].allocation);
+		}
+		free(engine.shader_data_buffers[i]);
+	}
+	free(engine.shader_data_buffers);
+	free(engine.shader_modules);
+	for(auto i = 0; i < engine.sc_image_count; i++) {
+		vkDestroySemaphore(engine.device, engine.render_complete_semaphores[i], nullptr);
+		vkDestroyImageView(engine.device, engine.sc_image_views[i], nullptr);
+	}
+	free(engine.render_complete_semaphores);
+	vmaDestroyImage(engine.allocator, engine.depth_image, engine.depth_image_allocation);
+	vkDestroyImageView(engine.device, engine.depth_image_view, nullptr);
+	free(engine.sc_images);
+	free(engine.sc_image_views);
+	vmaDestroyBuffer(engine.allocator, engine.v_buffer, engine.v_buffer_allocation);
+	for(auto i = 0; i < engine.texture_count; i++) {
+		vkDestroyImageView(engine.device, engine.textures[i].view, nullptr);
+		vkDestroySampler(engine.device, engine.textures[i].sampler, nullptr);
+		vmaDestroyImage(engine.allocator, engine.textures[i].image, engine.textures[i].allocation);
+	}
+	free(engine.textures);
+	free(engine.texture_descriptors);
+	vkDestroyDescriptorSetLayout(engine.device, engine.desc_set_layout_tex, nullptr);
+	vkDestroyDescriptorPool(engine.device, engine.desc_pool, nullptr);
+	vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, nullptr);
+	for(auto i = 0; i < engine.shader_count; i++ ) {
+		vkDestroyPipeline(engine.device, engine.pipelines[i], nullptr);
+	}
+	free(engine.pipelines);
+	vkDestroySwapchainKHR(engine.device, engine.swapchain, nullptr);
+	vkDestroySurfaceKHR(engine.instance, engine.surface, nullptr);
+	vkDestroyCommandPool(engine.device, engine.command_pool, nullptr);
+
+	vmaDestroyAllocator(engine.allocator);
+	SDL_DestroyWindow(engine.window);
+	SDL_QuitSubSystem(SDL_INIT_VIDEO);
+	SDL_Quit();
+	vkDestroyDevice(engine.device, nullptr);
+	vkDestroyInstance(engine.instance, nullptr);
+}
+
