@@ -222,13 +222,12 @@ void engine_poll_scancodes(Engine* engine) {
 
 void engine_begin_rendering(Engine* engine) {
 	// Record command buffer
-	auto cb = engine->command_buffers[engine->frame_index];
-	chk(vkResetCommandBuffer(cb, 0), __LINE__);
+	chk(vkResetCommandBuffer(engine->command_buffers[engine->frame_index], 0), __LINE__);
 	VkCommandBufferBeginInfo cbBI {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
 	};
-	chk(vkBeginCommandBuffer(cb, &cbBI), __LINE__);
+	chk(vkBeginCommandBuffer(engine->command_buffers[engine->frame_index], &cbBI), __LINE__);
 	// Memory Barriers help transition layouts, and enforces
 	// that it is done during the right pipeline stage.
 	// srcStageMask is where the pipeline waits.
@@ -274,7 +273,7 @@ void engine_begin_rendering(Engine* engine) {
 		.pImageMemoryBarriers = output_barriers
 	};
 	// Inserts the memory transitions into command buffer.
-	vkCmdPipelineBarrier2(cb, &barrier_dependency_info);
+	vkCmdPipelineBarrier2(engine->command_buffers[engine->frame_index], &barrier_dependency_info);
 
 	VkRenderingAttachmentInfo color_attachment_info {
 		.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -303,19 +302,19 @@ void engine_begin_rendering(Engine* engine) {
 		.pColorAttachments = &color_attachment_info,
 		.pDepthAttachment = &depth_attachment_info
 	};
-	vkCmdBeginRendering(cb, &rendering_info);
+	vkCmdBeginRendering(engine->command_buffers[engine->frame_index], &rendering_info);
 	VkViewport viewport {
 		.width = static_cast<float>(engine->window_width),
 		.height = static_cast<float>(engine->window_height),
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
-	vkCmdSetViewport(cb, 0, 1, &viewport);
+	vkCmdSetViewport(engine->command_buffers[engine->frame_index], 0, 1, &viewport);
 	VkRect2D scissor{ .extent{
 		.width = (uint32_t)engine->window_width,
 		.height = (uint32_t)engine->window_height,
 	}};
-	vkCmdSetScissor(cb, 0, 1, &scissor);
+	vkCmdSetScissor(engine->command_buffers[engine->frame_index], 0, 1, &scissor);
 }
 
 void engine_update_shader_data(Engine* engine) {
@@ -336,8 +335,7 @@ void engine_update_shader_data(Engine* engine) {
 }
 
 void engine_end_rendering_and_present(Engine* engine) {
-	auto cb = engine->command_buffers[engine->frame_index];
-	vkCmdEndRendering(cb);
+	vkCmdEndRendering(engine->command_buffers[engine->frame_index]);
 	VkImageMemoryBarrier2 barrier_present {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 		.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -358,8 +356,8 @@ void engine_end_rendering_and_present(Engine* engine) {
 		.imageMemoryBarrierCount = 1,
 		.pImageMemoryBarriers = &barrier_present
 	};
-	vkCmdPipelineBarrier2(cb, &barrier_present_dependency_info);
-	chk(vkEndCommandBuffer(cb), __LINE__);
+	vkCmdPipelineBarrier2(engine->command_buffers[engine->frame_index], &barrier_present_dependency_info);
+	chk(vkEndCommandBuffer(engine->command_buffers[engine->frame_index]), __LINE__);
 
 	// Submit command buffer
 	VkSemaphoreSubmitInfo wait_semaphore_info {
@@ -369,7 +367,7 @@ void engine_end_rendering_and_present(Engine* engine) {
 	};
 	VkCommandBufferSubmitInfo command_buffer_submit_info {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-		.commandBuffer = cb
+		.commandBuffer = engine->command_buffers[engine->frame_index]
 	};
 	VkSemaphoreSubmitInfo signal_semaphore_info {
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
@@ -416,25 +414,9 @@ void engine_render_loop(Engine engine) {
 
 		// Bind shader pipeline, then render v_buffer
 		// --------------------------
-		auto cb = engine.command_buffers[engine.frame_index];
-		vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, engine.pipelines[0]);
-		VkDeviceSize v_offset = 0;
-		vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, engine.pipeline_layout, 0, 1, &engine.desc_set, 0, nullptr);
-		vkCmdBindVertexBuffers(cb, 0, 1, &engine.v_buffer, &v_offset);
-		vkCmdBindIndexBuffer(cb, engine.v_buffer, engine.vertices_size, VK_INDEX_TYPE_UINT16);
-		vkCmdPushConstants(cb, engine.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine.shader_data_buffers[0][engine.frame_index].device_address);
-
-		vkCmdDrawIndexed(cb, engine.indices_count, 3, 0, 0, 0);
-
-
-		vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, engine.pipelines[1]);
-		vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, engine.pipeline_layout, 0, 1, &engine.desc_set, 0, nullptr);
-		vkCmdBindVertexBuffers(cb, 0, 1, &engine.v_buffer, &v_offset);
-		vkCmdBindIndexBuffer(cb, engine.v_buffer, engine.vertices_size, VK_INDEX_TYPE_UINT16);
-		vkCmdPushConstants(cb, engine.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine.shader_data_buffers[1][engine.frame_index].device_address);
-
-		vkCmdDrawIndexed(cb, engine.indices_count, 3, 0, 0, 0);
-		// --------------------
+		engine_draw_model(&engine, 0, 0, 0);
+		engine_draw_model(&engine, 0, 1, 1);
+		// -------------------
 
 		engine_end_rendering_and_present(&engine);
 
@@ -451,6 +433,7 @@ void engine_render_loop(Engine engine) {
 int main() {
 	EngineCreateInfo engineCI{ 
 		.texture_count = 3,
+		.model_count = 1,
 		.shader_count = 2
 	};
 	Engine engine = create_engine(engineCI);
@@ -459,6 +442,8 @@ int main() {
 	engine_load_texture_ktx(&engine, 1, "assets/suzanne1.ktx");
 	engine_load_texture_ktx(&engine, 2, "assets/suzanne2.ktx");
 	engine_load_texture_descriptors(&engine, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+	engine_load_model(&engine, 0, "assets/suzanne.obj");
 
 	engine_load_shader(&engine, 0, sizeof(ShaderData), "assets/shader.slang");
 	engine_load_shader(&engine, 1, sizeof(ShaderData), "assets/shader2.slang");

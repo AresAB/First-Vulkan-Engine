@@ -57,6 +57,13 @@ struct ShaderDataBuffer {
 	VkBuffer buffer{ VK_NULL_HANDLE };
 	VkDeviceAddress device_address{};
 };
+struct Model {
+	VmaAllocation v_buffer_allocation{ VK_NULL_HANDLE };
+	VkBuffer v_buffer{ VK_NULL_HANDLE };
+	VkDeviceSize indices_count;
+	VkDeviceSize vertices_size;
+	VkDeviceSize indices_size;
+};
 struct Texture {
 	VmaAllocation allocation{ VK_NULL_HANDLE };
 	VkImage image{ VK_NULL_HANDLE };
@@ -84,11 +91,8 @@ struct Engine {
 	VkImageCreateInfo depth_imageCI;
 	VmaAllocation depth_image_allocation;
 	VkImageView depth_image_view;
-	VkDeviceSize indices_count;
-	VkDeviceSize vertices_size;
-	VkDeviceSize indices_size;
-	VkBuffer v_buffer{ VK_NULL_HANDLE };
-	VmaAllocation v_buffer_allocation;
+	uint32_t model_count;
+	Model* models;
 	uint16_t frame_count;
 	uint32_t shader_count;
 	ShaderDataBuffer** shader_data_buffers;
@@ -131,182 +135,9 @@ struct EngineCreateInfo {
 	float cam_mv_spd = 0.000005f;
 	float cam_rot_spd = 0.005f;
 	uint32_t texture_count;
+	uint32_t model_count;
 	uint32_t shader_count;
 };
-
-void engine_load_texture_ktx(Engine* engine, uint32_t index, const char* filename){ 
-	if(index >= engine->texture_count){
-		std::cerr << "ERROR: Loading texture at index " << index << " when there are only " << engine->texture_count << " texture elements\n";
-	}
-
-	ktxTexture* ktx_texture = nullptr;
-	ktxTexture_CreateFromNamedFile(filename, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
-	// VK_IMAGE_USAGE_TRANSFER_DST_BIT tells it that we want
-	// to transfer the image data from disk (our image file).
-	VkImageCreateInfo tex_imgCI {
-		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		.imageType = VK_IMAGE_TYPE_2D,
-		.format = ktxTexture_GetVkFormat(ktx_texture),
-		.extent {
-			.width = ktx_texture->baseWidth,
-			.height = ktx_texture->baseHeight,
-			.depth = 1
-		},
-		.mipLevels = ktx_texture->numLevels,
-		.arrayLayers = 1,
-		.samples = VK_SAMPLE_COUNT_1_BIT,
-		.tiling = VK_IMAGE_TILING_OPTIMAL,
-		.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-	};
-	VmaAllocationCreateInfo tex_image_allocCI{
-		.usage = VMA_MEMORY_USAGE_AUTO
-	};
-	chk(vmaCreateImage(engine->allocator, &tex_imgCI, &tex_image_allocCI, &engine->textures[index].image, &engine->textures[index].allocation, nullptr), __LINE__);
-	VkImageViewCreateInfo tex_viewCI {
-		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = engine->textures[index].image,
-		.viewType = VK_IMAGE_VIEW_TYPE_2D,
-		.format = tex_imgCI.format,
-		.subresourceRange {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.levelCount = ktx_texture->numLevels,
-			.layerCount = 1
-		}
-	};
-	chk(vkCreateImageView(engine->device, &tex_viewCI, nullptr, &engine->textures[index].view), __LINE__);
-
-	// We can't just memcpy images unfortunately, we have to
-	// upload the image data to a buffer and then issue a
-	// command to copy the buffer into an image (while doing
-	// necessary conversions for tiling and stuff).
-	VkBuffer temp_image_buffer;
-	VmaAllocation temp_image_allocation;
-	VkBufferCreateInfo temp_image_bufferCI {
-		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = (uint32_t)ktx_texture->dataSize,
-		.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-	};
-	VmaAllocationCreateInfo temp_image_allocCI {
-		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
-		.usage = VMA_MEMORY_USAGE_AUTO
-	};
-	VmaAllocationInfo temp_image_alloc_info;
-	chk(vmaCreateBuffer(engine->allocator, &temp_image_bufferCI, &temp_image_allocCI, &temp_image_buffer, &temp_image_allocation, &temp_image_alloc_info), __LINE__);
-	memcpy(temp_image_alloc_info.pMappedData, ktx_texture->pData, ktx_texture->dataSize);
-	// Now we need to make our command buffers in order to
-	// do the copy commands, and we'll want a fence to know
-	// when it's done.
-	VkFenceCreateInfo temp_fenceCI {
-		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
-	};
-	VkFence temp_fence;
-	chk(vkCreateFence(engine->device, &temp_fenceCI, nullptr, &temp_fence), __LINE__);
-	VkCommandBuffer temp_cb;
-	VkCommandBufferAllocateInfo temp_cbAI {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-		.commandPool = engine->command_pool,
-		.commandBufferCount = 1
-	};
-	chk(vkAllocateCommandBuffers(engine->device, &temp_cbAI, &temp_cb), __LINE__);
-	// Now we need to record our copy command.
-	// The layout (tiling) of the image in memory determines
-	// what it can do, so we use vkCmdPipelineBarrier2 to
-	// convert to a layout that makes mip levels transferable,
-	// then copy all mip levels to our temp buffer via
-	// vkCmdCopyBufferToImage, and then convert layout to
-	// make mip levels readable from shaders.
-	VkCommandBufferBeginInfo temp_cbBI {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-	};
-	chk(vkBeginCommandBuffer(temp_cb, &temp_cbBI), __LINE__);
-	VkImageMemoryBarrier2 barrier_tex_transfer {
-		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-		.srcStageMask = VK_PIPELINE_STAGE_2_NONE,
-		.srcAccessMask = VK_ACCESS_2_NONE,
-		.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-		.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-		.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-		.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		.image = engine->textures[index].image,
-		.subresourceRange {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.levelCount = ktx_texture->numLevels,
-			.layerCount = 1
-		}
-	};
-	VkDependencyInfo barrier_tex_info {
-		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-		.imageMemoryBarrierCount = 1,
-		.pImageMemoryBarriers = &barrier_tex_transfer
-	};
-	vkCmdPipelineBarrier2(temp_cb, &barrier_tex_info);
-	VkBufferImageCopy* copy_regions = (VkBufferImageCopy*)malloc(sizeof(VkBufferImageCopy) * ktx_texture->numLevels);
-	for(auto j = 0; j < ktx_texture->numLevels; j++) {
-		ktx_size_t mip_offset = 0;
-		KTX_error_code ret = ktxTexture_GetImageOffset(ktx_texture, j, 0, 0, &mip_offset);
-		copy_regions[j] = {
-			.bufferOffset = mip_offset,
-			.imageSubresource {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.mipLevel = (uint32_t)j,
-				.layerCount = 1
-			},
-			.imageExtent {
-				.width = ktx_texture->baseWidth >> j,
-				.height = ktx_texture->baseHeight >> j,
-				.depth = 1
-			}
-		};
-	}
-	vkCmdCopyBufferToImage(temp_cb, temp_image_buffer, engine->textures[index].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(ktx_texture->numLevels), copy_regions);
-	VkImageMemoryBarrier2 barrier_tex_read {
-		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-		.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-		.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-		.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-		.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-		.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-		.image = engine->textures[index].image,
-		.subresourceRange {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.levelCount = ktx_texture->numLevels,
-			.layerCount = 1
-		}
-	};
-	barrier_tex_info.pImageMemoryBarriers = &barrier_tex_read;
-	vkCmdPipelineBarrier2(temp_cb, &barrier_tex_info);
-	chk(vkEndCommandBuffer(temp_cb), __LINE__);
-	VkSubmitInfo one_timeSI {
-		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.commandBufferCount = 1,
-		.pCommandBuffers = &temp_cb
-	};
-	chk(vkQueueSubmit(engine->queue, 1, &one_timeSI, temp_fence), __LINE__);
-	chk(vkWaitForFences(engine->device, 1, &temp_fence, VK_TRUE, UINT64_MAX), __LINE__);
-	free(copy_regions);
-	vkDestroyFence(engine->device, temp_fence, nullptr);
-	vmaDestroyBuffer(engine->allocator, temp_image_buffer, temp_image_allocation);
-	// Wrap it up by defining the shader's sample behavior
-	VkSamplerCreateInfo samplerCI {
-		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-		.magFilter = VK_FILTER_LINEAR,
-		.minFilter = VK_FILTER_LINEAR,
-		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-		.anisotropyEnable = VK_TRUE,
-		.maxAnisotropy = 8.0f, // 8 is generally max
-		.maxLod = (float)ktx_texture->numLevels
-	};
-	chk(vkCreateSampler(engine->device, &samplerCI, nullptr, &engine->textures[index].sampler), __LINE__);
-	ktxTexture_Destroy(ktx_texture);
-	engine->texture_descriptors[index] = {
-		.sampler = engine->textures[index].sampler,
-		.imageView = engine->textures[index].view,
-		.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL
-	};
-}
 
 Engine create_engine(EngineCreateInfo engineCI) {
 	chk(SDL_Init(SDL_INIT_VIDEO), __LINE__);
@@ -321,6 +152,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	engine.cam_rot_mat = engine.og_cam_rot_mat;
 	engine.cam_mv_spd = engineCI.cam_mv_spd;
 	engine.cam_rot_spd = engineCI.cam_rot_spd;
+	engine.model_count = engineCI.model_count;
 	engine.shader_count = engineCI.shader_count;
 
 	// Create our Vulkan Instance
@@ -614,71 +446,6 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	chk(vkCreateImageView(engine.device, &depth_viewCI, NULL, &engine.depth_image_view), __LINE__);
 	// - - - - - - - - - - - - - - - -
 	
-	// Loading Meshes
-	// -------------------------------
-
-	// attributes = vertex data, shapes = index data
-	tinyobj::attrib_t attrib;
-	std::vector<tinyobj::shape_t> shapes;
-	std::vector<tinyobj::material_t> materials;
-	chk(tinyobj::LoadObj(&attrib, &shapes, &materials, NULL, NULL, "assets/suzanne.obj"), __LINE__);
-
-	// -Ligma
-	// This creates a new vertex per index, which quite literally
-	// removes the point of indices, so make sure to optimize later
-	engine.indices_count = shapes[0].mesh.indices.size();
-	engine.vertices_size = engine.indices_count * sizeof(Vertex);
-	engine.indices_size = engine.indices_count * sizeof(uint16_t);
-	Vertex* vertices = (Vertex*)malloc(engine.vertices_size);
-	uint16_t* indices = (uint16_t*)malloc(engine.indices_size);
-	for(VkDeviceSize i = 0; i < engine.indices_count; i++) {
-		auto index = shapes[0].mesh.indices[i];
-		// Negate y values cause Vulkan is right-handed,
-		// unlike OpenGL which is left-handed in coords
-		Vertex v {
-			.pos = {
-				attrib.vertices[index.vertex_index * 3],
-				-attrib.vertices[index.vertex_index * 3 + 1],
-				attrib.vertices[index.vertex_index * 3 + 2]
-			},
-			.normal = {
-				attrib.normals[index.normal_index * 3],
-				-attrib.normals[index.normal_index * 3 + 1],
-				attrib.normals[index.normal_index * 3 + 2]
-			},
-			.uv = {
-				attrib.texcoords[index.texcoord_index * 2],
-				1.0 - attrib.texcoords[index.texcoord_index * 2 + 1]
-			}
-		};
-		vertices[i] = v;
-		indices[i] = i;
-	}
-
-	// -Ligma
-	// We put vertices and indices in the same buffer here,
-	// might look into if this is truly ideal
-	VkBufferCreateInfo bufferCI {
-		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = engine.vertices_size + engine.indices_size,
-		.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-	};
-
-	// First 2 flags tells VMA to create memory on the GPU (VRAM)
-	// that is accessable to host. 3rd flags allows us to directly
-	// copy data into VRAM.
-	VmaAllocationCreateInfo v_buffer_allocCI {
-		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
-		.usage = VMA_MEMORY_USAGE_AUTO
-	};
-	VmaAllocationInfo v_buffer_alloc_info;
-	chk(vmaCreateBuffer(engine.allocator, &bufferCI, &v_buffer_allocCI, &engine.v_buffer, &engine.v_buffer_allocation, &v_buffer_alloc_info), __LINE__);
-	memcpy(v_buffer_alloc_info.pMappedData, vertices, engine.vertices_size);
-	memcpy(((char*)v_buffer_alloc_info.pMappedData) + engine.vertices_size, indices, engine.indices_size);
-	free(vertices);
-	free(indices);
-	// -------------------------------
-	
 	// GPU and CPU Parallelism
 	// - - - - - - - - - - - - - - - -
 
@@ -750,6 +517,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 
 	// - - - - - - - - - - - - - - - -
 
+	engine.models = (Model*)malloc(engine.model_count * sizeof(Model));
 	engine.shader_data_buffers = (ShaderDataBuffer**)malloc(engine.shader_count * sizeof(ShaderDataBuffer*));
 	engine.shader_modules = (VkShaderModule*)malloc(engine.shader_count * sizeof(VkShaderModule));
 	engine.pipelines = (VkPipeline*)malloc(engine.shader_count * sizeof(VkPipeline));
@@ -809,6 +577,180 @@ void engine_recreate_swapchain(Engine* engine) {
 		.subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
 	};
 	chk(vkCreateImageView(engine->device, &viewCI, nullptr, &engine->depth_image_view), __LINE__);
+}
+
+void engine_load_texture_ktx(Engine* engine, uint32_t index, const char* filename){ 
+	if(index >= engine->texture_count){
+		std::cerr << "ERROR: Loading texture at index " << index << " when there are only " << engine->texture_count << " texture elements\n";
+	}
+
+	ktxTexture* ktx_texture = nullptr;
+	ktxTexture_CreateFromNamedFile(filename, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
+	// VK_IMAGE_USAGE_TRANSFER_DST_BIT tells it that we want
+	// to transfer the image data from disk (our image file).
+	VkImageCreateInfo tex_imgCI {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		.imageType = VK_IMAGE_TYPE_2D,
+		.format = ktxTexture_GetVkFormat(ktx_texture),
+		.extent {
+			.width = ktx_texture->baseWidth,
+			.height = ktx_texture->baseHeight,
+			.depth = 1
+		},
+		.mipLevels = ktx_texture->numLevels,
+		.arrayLayers = 1,
+		.samples = VK_SAMPLE_COUNT_1_BIT,
+		.tiling = VK_IMAGE_TILING_OPTIMAL,
+		.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+	};
+	VmaAllocationCreateInfo tex_image_allocCI{
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+	chk(vmaCreateImage(engine->allocator, &tex_imgCI, &tex_image_allocCI, &engine->textures[index].image, &engine->textures[index].allocation, nullptr), __LINE__);
+	VkImageViewCreateInfo tex_viewCI {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = engine->textures[index].image,
+		.viewType = VK_IMAGE_VIEW_TYPE_2D,
+		.format = tex_imgCI.format,
+		.subresourceRange {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.levelCount = ktx_texture->numLevels,
+			.layerCount = 1
+		}
+	};
+	chk(vkCreateImageView(engine->device, &tex_viewCI, nullptr, &engine->textures[index].view), __LINE__);
+
+	// We can't just memcpy images unfortunately, we have to
+	// upload the image data to a buffer and then issue a
+	// command to copy the buffer into an image (while doing
+	// necessary conversions for tiling and stuff).
+	VkBuffer temp_image_buffer;
+	VmaAllocation temp_image_allocation;
+	VkBufferCreateInfo temp_image_bufferCI {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = (uint32_t)ktx_texture->dataSize,
+		.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+	};
+	VmaAllocationCreateInfo temp_image_allocCI {
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+	VmaAllocationInfo temp_image_alloc_info;
+	chk(vmaCreateBuffer(engine->allocator, &temp_image_bufferCI, &temp_image_allocCI, &temp_image_buffer, &temp_image_allocation, &temp_image_alloc_info), __LINE__);
+	memcpy(temp_image_alloc_info.pMappedData, ktx_texture->pData, ktx_texture->dataSize);
+	// Now we need to make our command buffers in order to
+	// do the copy commands, and we'll want a fence to know
+	// when it's done.
+	VkFenceCreateInfo temp_fenceCI {
+		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+	};
+	VkFence temp_fence;
+	chk(vkCreateFence(engine->device, &temp_fenceCI, nullptr, &temp_fence), __LINE__);
+	VkCommandBuffer temp_cb;
+	VkCommandBufferAllocateInfo temp_cbAI {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		.commandPool = engine->command_pool,
+		.commandBufferCount = 1
+	};
+	chk(vkAllocateCommandBuffers(engine->device, &temp_cbAI, &temp_cb), __LINE__);
+	// Now we need to record our copy command.
+	// The layout (tiling) of the image in memory determines
+	// what it can do, so we use vkCmdPipelineBarrier2 to
+	// convert to a layout that makes mip levels transferable,
+	// then copy all mip levels to our temp buffer via
+	// vkCmdCopyBufferToImage, and then convert layout to
+	// make mip levels readable from shaders.
+	VkCommandBufferBeginInfo temp_cbBI {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	chk(vkBeginCommandBuffer(temp_cb, &temp_cbBI), __LINE__);
+	VkImageMemoryBarrier2 barrier_tex_transfer {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+		.srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+		.srcAccessMask = VK_ACCESS_2_NONE,
+		.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+		.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		.image = engine->textures[index].image,
+		.subresourceRange {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.levelCount = ktx_texture->numLevels,
+			.layerCount = 1
+		}
+	};
+	VkDependencyInfo barrier_tex_info {
+		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &barrier_tex_transfer
+	};
+	vkCmdPipelineBarrier2(temp_cb, &barrier_tex_info);
+	VkBufferImageCopy* copy_regions = (VkBufferImageCopy*)malloc(sizeof(VkBufferImageCopy) * ktx_texture->numLevels);
+	for(auto j = 0; j < ktx_texture->numLevels; j++) {
+		ktx_size_t mip_offset = 0;
+		KTX_error_code ret = ktxTexture_GetImageOffset(ktx_texture, j, 0, 0, &mip_offset);
+		copy_regions[j] = {
+			.bufferOffset = mip_offset,
+			.imageSubresource {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.mipLevel = (uint32_t)j,
+				.layerCount = 1
+			},
+			.imageExtent {
+				.width = ktx_texture->baseWidth >> j,
+				.height = ktx_texture->baseHeight >> j,
+				.depth = 1
+			}
+		};
+	}
+	vkCmdCopyBufferToImage(temp_cb, temp_image_buffer, engine->textures[index].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(ktx_texture->numLevels), copy_regions);
+	VkImageMemoryBarrier2 barrier_tex_read {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+		.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+		.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+		.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+		.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+		.image = engine->textures[index].image,
+		.subresourceRange {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.levelCount = ktx_texture->numLevels,
+			.layerCount = 1
+		}
+	};
+	barrier_tex_info.pImageMemoryBarriers = &barrier_tex_read;
+	vkCmdPipelineBarrier2(temp_cb, &barrier_tex_info);
+	chk(vkEndCommandBuffer(temp_cb), __LINE__);
+	VkSubmitInfo one_timeSI {
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.commandBufferCount = 1,
+		.pCommandBuffers = &temp_cb
+	};
+	chk(vkQueueSubmit(engine->queue, 1, &one_timeSI, temp_fence), __LINE__);
+	chk(vkWaitForFences(engine->device, 1, &temp_fence, VK_TRUE, UINT64_MAX), __LINE__);
+	free(copy_regions);
+	vkDestroyFence(engine->device, temp_fence, nullptr);
+	vmaDestroyBuffer(engine->allocator, temp_image_buffer, temp_image_allocation);
+	// Wrap it up by defining the shader's sample behavior
+	VkSamplerCreateInfo samplerCI {
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.magFilter = VK_FILTER_LINEAR,
+		.minFilter = VK_FILTER_LINEAR,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		.anisotropyEnable = VK_TRUE,
+		.maxAnisotropy = 8.0f, // 8 is generally max
+		.maxLod = (float)ktx_texture->numLevels
+	};
+	chk(vkCreateSampler(engine->device, &samplerCI, nullptr, &engine->textures[index].sampler), __LINE__);
+	ktxTexture_Destroy(ktx_texture);
+	engine->texture_descriptors[index] = {
+		.sampler = engine->textures[index].sampler,
+		.imageView = engine->textures[index].view,
+		.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL
+	};
 }
 
 void engine_load_texture_descriptors(Engine* engine, VkShaderStageFlags shader_access_flags) {
@@ -871,6 +813,70 @@ void engine_load_texture_descriptors(Engine* engine, VkShaderStageFlags shader_a
 		.pImageInfo = engine->texture_descriptors
 	};
 	vkUpdateDescriptorSets(engine->device, 1, &write_desc_set, 0, nullptr);
+}
+
+void engine_load_model(Engine* engine, uint32_t index, const char* filename) {
+	if(index >= engine->model_count){
+		std::cerr << "ERROR: Loading model at index " << index << " when there are only " << engine->model_count << " model elements\n";
+	}
+
+	// attributes = vertex data, shapes = index data
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	chk(tinyobj::LoadObj(&attrib, &shapes, &materials, NULL, NULL, filename), __LINE__);
+
+	// -Ligma
+	// This creates a new vertex per index, which quite literally
+	// removes the point of indices, so make sure to optimize later
+	engine->models[index].indices_count = shapes[0].mesh.indices.size();
+	engine->models[index].vertices_size = engine->models[index].indices_count * sizeof(Vertex);
+	engine->models[index].indices_size = engine->models[index].indices_count * sizeof(uint16_t);
+	Vertex* vertices = (Vertex*)malloc(engine->models[index].vertices_size);
+	uint16_t* indices = (uint16_t*)malloc(engine->models[index].indices_size);
+	for(VkDeviceSize i = 0; i < engine->models[index].indices_count; i++) {
+		auto mesh_index = shapes[0].mesh.indices[i];
+		// Negate y values cause Vulkan is right-handed,
+		// unlike OpenGL which is left-handed in coords
+		Vertex v {
+			.pos = {
+				attrib.vertices[mesh_index.vertex_index * 3],
+				-attrib.vertices[mesh_index.vertex_index * 3 + 1],
+				attrib.vertices[mesh_index.vertex_index * 3 + 2]
+			},
+			.normal = {
+				attrib.normals[mesh_index.normal_index * 3],
+				-attrib.normals[mesh_index.normal_index * 3 + 1],
+				attrib.normals[mesh_index.normal_index * 3 + 2]
+			},
+			.uv = {
+				attrib.texcoords[mesh_index.texcoord_index * 2],
+				1.0 - attrib.texcoords[mesh_index.texcoord_index * 2 + 1]
+			}
+		};
+		vertices[i] = v;
+		indices[i] = i;
+	}
+
+	VkBufferCreateInfo bufferCI {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = engine->models[index].vertices_size + engine->models[index].indices_size,
+		.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+	};
+
+	// First 2 flags tells VMA to create memory on the GPU (VRAM)
+	// that is accessable to host. 3rd flags allows us to directly
+	// copy data into VRAM.
+	VmaAllocationCreateInfo v_buffer_allocCI {
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+	VmaAllocationInfo v_buffer_alloc_info;
+	chk(vmaCreateBuffer(engine->allocator, &bufferCI, &v_buffer_allocCI, &engine->models[index].v_buffer, &engine->models[index].v_buffer_allocation, &v_buffer_alloc_info), __LINE__);
+	memcpy(v_buffer_alloc_info.pMappedData, vertices, engine->models[index].vertices_size);
+	memcpy(((char*)v_buffer_alloc_info.pMappedData) + engine->models[index].vertices_size, indices, engine->models[index].indices_size);
+	free(vertices);
+	free(indices);
 }
 
 void engine_create_pipeline_layout(Engine* engine) {
@@ -1093,6 +1099,17 @@ void engine_create_basic_pipelines(Engine* engine, uint32_t* indices, uint32_t i
 	free(pipelines);
 }
 
+void engine_draw_model(Engine* engine, uint32_t m_index, uint32_t p_index, uint32_t s_index) {
+	VkDeviceSize v_offset = 0;
+	vkCmdBindPipeline(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipelines[p_index]);
+	vkCmdBindDescriptorSets(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipeline_layout, 0, 1, &engine->desc_set, 0, nullptr);
+	vkCmdBindVertexBuffers(engine->command_buffers[engine->frame_index], 0, 1, &engine->models[m_index].v_buffer, &v_offset);
+	vkCmdBindIndexBuffer(engine->command_buffers[engine->frame_index], engine->models[m_index].v_buffer, engine->models[m_index].vertices_size, VK_INDEX_TYPE_UINT16);
+	vkCmdPushConstants(engine->command_buffers[engine->frame_index], engine->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine->shader_data_buffers[s_index][engine->frame_index].device_address);
+
+	vkCmdDrawIndexed(engine->command_buffers[engine->frame_index], engine->models[m_index].indices_count, 3, 0, 0, 0);
+}
+
 void destroy_engine(Engine engine) {
 	free(engine.shader_data_buffers);
 	free(engine.command_buffers);
@@ -1121,7 +1138,10 @@ void destroy_engine(Engine engine) {
 	vkDestroyImageView(engine.device, engine.depth_image_view, nullptr);
 	free(engine.sc_images);
 	free(engine.sc_image_views);
-	vmaDestroyBuffer(engine.allocator, engine.v_buffer, engine.v_buffer_allocation);
+	for(auto i = 0; i < engine.model_count; i++) {
+		vmaDestroyBuffer(engine.allocator, engine.models[i].v_buffer, engine.models[i].v_buffer_allocation);
+	}
+	free(engine.models);
 	for(auto i = 0; i < engine.texture_count; i++) {
 		vkDestroyImageView(engine.device, engine.textures[i].view, nullptr);
 		vkDestroySampler(engine.device, engine.textures[i].sampler, nullptr);
