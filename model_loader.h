@@ -118,7 +118,6 @@ void generate_mesh_minimal(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, ui
 	char* str_read = (char*)malloc(100 * sizeof(char));
 	fseek(file, beg_indices_and_f_sizes[0], SEEK_SET);
 	c_read = fgetc(file);
-	printf("char: %c at %ld\n", c_read, beg_indices_and_f_sizes[0]);
 	while(c_read == 'f') {
 		fseek(file, 1, SEEK_CUR);
 		for(uint16_t i = 0; i < 3; i++) {
@@ -620,7 +619,6 @@ uint16_t generate_mesh(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* 
 		c_read = fgetc(file);
 	}
 	free(str_read);
-	indices = (uint16_t*)realloc(indices, sizeof(uint16_t) * indice_i * 3);
 	Mesh new_m;
 	new_m.i_count = indice_i * 3;
 	*p_mesh = new_m;
@@ -628,7 +626,7 @@ uint16_t generate_mesh(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* 
 }
 
 void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
-	FILE* file = fopen(filename, "r");
+	FILE* file = fopen(filename, "rb");
 	
 	fseek(file, 0, SEEK_END);
 	long int end_i = ftell(file);
@@ -799,7 +797,6 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 	*/
 	free(p_verts);
 
-	printf("%ld, %ld\n", new_m->meshes[group_size-1].i_index, new_m->meshes[group_size-1].i_count * sizeof(uint16_t));
 	VkBufferCreateInfo bufferCI {
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		.size = new_m->meshes[group_size-1].i_index + new_m->meshes[group_size-1].i_count * sizeof(uint16_t),
