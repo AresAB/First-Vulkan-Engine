@@ -443,7 +443,8 @@ int main() {
 	engine_load_texture_ktx(&engine, 2, "assets/suzanne2.ktx");
 	engine_load_texture_descriptors(&engine, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	engine_load_model(&engine, 0, "assets/suzanne.obj");
+	//engine_load_model(&engine, 0, "assets/suzanne.obj");
+	engine_load_model(&engine, 0, "assets/teapot.obj");
 
 	engine_load_shader(&engine, 0, sizeof(ShaderData), "assets/shader.slang");
 	engine_load_shader(&engine, 1, sizeof(ShaderData), "assets/shader2.slang");

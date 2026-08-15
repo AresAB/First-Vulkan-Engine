@@ -20,7 +20,7 @@
 #include <ktx.h>
 #include <ktxvulkan.h>
 #define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
+#include "model_loader.h"
 
 #include <cstdlib>
 
@@ -46,23 +46,11 @@ static inline void chk_swapchain(VkResult result, bool* update_swapchain, int li
 	}
 }
 
-struct Vertex {
-	glm::vec3 pos;
-	glm::vec3 normal;
-	glm::vec2 uv;
-};
 struct ShaderDataBuffer {
 	VmaAllocation allocation{ VK_NULL_HANDLE };
 	VmaAllocationInfo allocation_info{};
 	VkBuffer buffer{ VK_NULL_HANDLE };
 	VkDeviceAddress device_address{};
-};
-struct Model {
-	VmaAllocation v_buffer_allocation{ VK_NULL_HANDLE };
-	VkBuffer v_buffer{ VK_NULL_HANDLE };
-	VkDeviceSize indices_count;
-	VkDeviceSize vertices_size;
-	VkDeviceSize indices_size;
 };
 struct Texture {
 	VmaAllocation allocation{ VK_NULL_HANDLE };
@@ -819,64 +807,8 @@ void engine_load_model(Engine* engine, uint32_t index, const char* filename) {
 	if(index >= engine->model_count){
 		std::cerr << "ERROR: Loading model at index " << index << " when there are only " << engine->model_count << " model elements\n";
 	}
-
-	// attributes = vertex data, shapes = index data
-	tinyobj::attrib_t attrib;
-	std::vector<tinyobj::shape_t> shapes;
-	std::vector<tinyobj::material_t> materials;
-	chk(tinyobj::LoadObj(&attrib, &shapes, &materials, NULL, NULL, filename), __LINE__);
-
-	// -Ligma
-	// This creates a new vertex per index, which quite literally
-	// removes the point of indices, so make sure to optimize later
-	engine->models[index].indices_count = shapes[0].mesh.indices.size();
-	engine->models[index].vertices_size = engine->models[index].indices_count * sizeof(Vertex);
-	engine->models[index].indices_size = engine->models[index].indices_count * sizeof(uint16_t);
-	Vertex* vertices = (Vertex*)malloc(engine->models[index].vertices_size);
-	uint16_t* indices = (uint16_t*)malloc(engine->models[index].indices_size);
-	for(VkDeviceSize i = 0; i < engine->models[index].indices_count; i++) {
-		auto mesh_index = shapes[0].mesh.indices[i];
-		// Negate y values cause Vulkan is right-handed,
-		// unlike OpenGL which is left-handed in coords
-		Vertex v {
-			.pos = {
-				attrib.vertices[mesh_index.vertex_index * 3],
-				-attrib.vertices[mesh_index.vertex_index * 3 + 1],
-				attrib.vertices[mesh_index.vertex_index * 3 + 2]
-			},
-			.normal = {
-				attrib.normals[mesh_index.normal_index * 3],
-				-attrib.normals[mesh_index.normal_index * 3 + 1],
-				attrib.normals[mesh_index.normal_index * 3 + 2]
-			},
-			.uv = {
-				attrib.texcoords[mesh_index.texcoord_index * 2],
-				1.0 - attrib.texcoords[mesh_index.texcoord_index * 2 + 1]
-			}
-		};
-		vertices[i] = v;
-		indices[i] = i;
-	}
-
-	VkBufferCreateInfo bufferCI {
-		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = engine->models[index].vertices_size + engine->models[index].indices_size,
-		.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-	};
-
-	// First 2 flags tells VMA to create memory on the GPU (VRAM)
-	// that is accessable to host. 3rd flags allows us to directly
-	// copy data into VRAM.
-	VmaAllocationCreateInfo v_buffer_allocCI {
-		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
-		.usage = VMA_MEMORY_USAGE_AUTO
-	};
-	VmaAllocationInfo v_buffer_alloc_info;
-	chk(vmaCreateBuffer(engine->allocator, &bufferCI, &v_buffer_allocCI, &engine->models[index].v_buffer, &engine->models[index].v_buffer_allocation, &v_buffer_alloc_info), __LINE__);
-	memcpy(v_buffer_alloc_info.pMappedData, vertices, engine->models[index].vertices_size);
-	memcpy(((char*)v_buffer_alloc_info.pMappedData) + engine->models[index].vertices_size, indices, engine->models[index].indices_size);
-	free(vertices);
-	free(indices);
+	
+	load_model(engine->allocator, engine->models+index, filename);
 }
 
 void engine_create_pipeline_layout(Engine* engine) {
@@ -1104,10 +1036,10 @@ void engine_draw_model(Engine* engine, uint32_t m_index, uint32_t p_index, uint3
 	vkCmdBindPipeline(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipelines[p_index]);
 	vkCmdBindDescriptorSets(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipeline_layout, 0, 1, &engine->desc_set, 0, nullptr);
 	vkCmdBindVertexBuffers(engine->command_buffers[engine->frame_index], 0, 1, &engine->models[m_index].v_buffer, &v_offset);
-	vkCmdBindIndexBuffer(engine->command_buffers[engine->frame_index], engine->models[m_index].v_buffer, engine->models[m_index].vertices_size, VK_INDEX_TYPE_UINT16);
+	vkCmdBindIndexBuffer(engine->command_buffers[engine->frame_index], engine->models[m_index].v_buffer, engine->models[m_index].meshes[0].i_index, VK_INDEX_TYPE_UINT16);
 	vkCmdPushConstants(engine->command_buffers[engine->frame_index], engine->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine->shader_data_buffers[s_index][engine->frame_index].device_address);
 
-	vkCmdDrawIndexed(engine->command_buffers[engine->frame_index], engine->models[m_index].indices_count, 3, 0, 0, 0);
+	vkCmdDrawIndexed(engine->command_buffers[engine->frame_index], engine->models[m_index].meshes[0].i_count, 3, 0, 0, 0);
 }
 
 void destroy_engine(Engine engine) {
