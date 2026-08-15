@@ -109,7 +109,7 @@ void initialize_p_verts(IndicedVertex** p_verts, Vec3* normals, Vec2* uv, VkDevi
 	free(str_read);
 }
 
-void generate_mesh_minimal(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, uint16_t v_size, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
+void generate_mesh_minimal(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
 	long int f_size = beg_indices_and_f_sizes[1];
 	uint16_t* indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 6);
 	*p_indices = indices;
@@ -217,131 +217,130 @@ void generate_mesh_minimal(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, ui
 	*p_mesh = new_m;
 }
 
-/*
-uint16_t generate_mesh_given_normals(Mesh** pp_mesh, IndicedVertex** pa_vert, Vec3* normals, uint16_t v_size, FILE* file, uint16_t* beg_indices_and_f_sizes) {
-	uint16_t section_size = sizeof(beg_indices_and_f_sizes) / sizeof(uint16_t);
-	uint16_t f_size = 0;
-	for(uint16_t i = 1; i < section_size; i += 2) {
-		f_size += beg_indices_and_f_sizes[i];
-	}
-	Mesh* new_m = (Mesh*)malloc(sizeof(Mesh));
-	*pp_mesh = new_m;
-	new_m->indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 6);
-	uint16_t new_v_size = v_size;
+VkDeviceSize generate_mesh_given_normals(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* normals, uint16_t v_size, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
+	long int f_size = beg_indices_and_f_sizes[1];
+	uint16_t* indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 6);
+	*p_indices = indices;
+	long int new_v_size = v_size;
 	uint16_t indice_i = 0;
 	char c_read;
-	char* str_read = (char*)malloc(1000 * sizeof(char));
-	for(uint16_t i = 0; i < section_size; i += 2){
-		fseek(file, beg_indices_and_f_sizes[i], SEEK_SET);
-		c_read = fgetc(file);
-		while(c_read == 'f') {
-			fseek(file, 1, SEEK_CUR);
-			for(uint16_t j = 0; j < 3; j++) {
-				uint16_t str_i = 0;
-				c_read = fgetc(file);
-				while(c_read != '/') {	
-					str_read[str_i] = c_read;
-					str_i++;
-					c_read = fgetc(file);
-				}
-				str_read[str_i] = '\0';
-				uint16_t v_indice = atoi(str_read) - 1;
-				str_i = 0;
-				c_read = fgetc(file);
-				c_read = fgetc(file);
-				while(c_read != ' ' && c_read != '\n') {	
-					str_read[str_i] = c_read;
-					str_i++;
-					c_read = fgetc(file);
-				}
-				str_read[str_i] = '\0';
-				uint16_t vn_indice = atoi(str_read) - 1;
-				uint16_t indice = 0;
-				uint16_t s = pa_vert[v_indice][0].i;
-				if(s == 0) {
-					pa_vert[v_indice][0].v.normal = normals[vn_indice];
-					pa_vert[v_indice][0].i++;
-					indice = v_indice + 1;
-				}
-				for(uint16_t k = 0; k < s; k++) {
-					if(pa_vert[v_indice][k].v.normal.x == normals[vn_indice].x && pa_vert[v_indice][k].v.normal.y == normals[vn_indice].y && pa_vert[v_indice][k].v.normal.z == normals[vn_indice].z) {
-						if(k == 0) indice = v_indice + 1;
-						else indice = pa_vert[v_indice][k].i + 1;
-						break;
-					}
-				}
-				if(indice == 0) {
-					pa_vert[v_indice][0].i++;
-					pa_vert[v_indice] = (IndicedVertex*)realloc((void*)(pa_vert[v_indice]), (s+1) * sizeof(IndicedVertex));
-					pa_vert[v_indice][s] = pa_vert[v_indice][0];
-					pa_vert[v_indice][s].v.normal = normals[vn_indice];
-					pa_vert[v_indice][s].i = new_v_size;
-					new_v_size++;
-					indice = new_v_size;
-				}
-				new_m->indices[indice_i*3+j] = indice - 1;
-			}
-			if(c_read == ' ') {
+	char* str_read = (char*)malloc(100 * sizeof(char));
+	fseek(file, beg_indices_and_f_sizes[0], SEEK_SET);
+	c_read = fgetc(file);
+	while(c_read == 'f') {
+		fseek(file, 1, SEEK_CUR);
+		for(uint16_t j = 0; j < 3; j++) {
+			uint16_t str_i = 0;
 			c_read = fgetc(file);
-			if(c_read != '\n') {
-				indice_i++;
-				uint16_t str_i = 0;
-				while(c_read != '/') {	
-					str_read[str_i] = c_read;
-					str_i++;
-					c_read = fgetc(file);
-				}
-				str_read[str_i] = '\0';
-				uint16_t v_indice = atoi(str_read) - 1;
-				str_i = 0;
+			while(c_read != '/') {	
+				str_read[str_i] = c_read;
+				str_i++;
 				c_read = fgetc(file);
-				c_read = fgetc(file);
-				while(c_read != '\n') {	
-					str_read[str_i] = c_read;
-					str_i++;
-					c_read = fgetc(file);
-				}
-				str_read[str_i] = '\0';
-				uint16_t vn_indice = atoi(str_read) - 1;
-				uint16_t indice = 0;
-				uint16_t s = pa_vert[v_indice][0].i;
-				if(s == 0) {
-					pa_vert[v_indice][0].v.normal = normals[vn_indice];
-					pa_vert[v_indice][0].i++;
-					indice = v_indice + 1;
-				}
-				for(uint16_t j = 0; j < s; j++) {
-					if(pa_vert[v_indice][j].v.normal.x == normals[vn_indice].x && pa_vert[v_indice][j].v.normal.y == normals[vn_indice].y && pa_vert[v_indice][j].v.normal.z == normals[vn_indice].z) {
-						if(j == 0) indice = v_indice + 1;
-						else indice = pa_vert[v_indice][j].i + 1;
-						break;
-					}
-				}
-				if(indice == 0) {
-					pa_vert[v_indice][0].i++;
-					pa_vert[v_indice] = (IndicedVertex*)realloc((void*)(pa_vert[v_indice]), (s+1) * sizeof(IndicedVertex));
-					pa_vert[v_indice][s] = pa_vert[v_indice][0];
-					pa_vert[v_indice][s].v.normal = normals[vn_indice];
-					pa_vert[v_indice][s].i = new_v_size;
-					new_v_size++;
-					indice = new_v_size;
-				}
-				new_m->indices[indice_i*3] = new_m->indices[(indice_i-1)*3];
-				new_m->indices[indice_i*3 + 1] = new_m->indices[(indice_i-1)*3 + 2];
-				new_m->indices[indice_i*3 + 2] = indice - 1;
 			}
-			}
-			indice_i++;
+			str_read[str_i] = '\0';
+			VkDeviceSize v_indice = atoi(str_read) - 1;
+			str_i = 0;
 			c_read = fgetc(file);
+			while(c_read != '/') {
+				c_read = fgetc(file);
+			}
+			c_read = fgetc(file);
+			while(c_read != ' ' && c_read != '\n') {	
+				str_read[str_i] = c_read;
+				str_i++;
+				c_read = fgetc(file);
+			}
+			str_read[str_i] = '\0';
+			VkDeviceSize vn_indice = atoi(str_read) - 1;
+			uint16_t indice = 0;
+			uint16_t s = p_verts[v_indice][0].i;
+			if(s == 0) {
+				p_verts[v_indice][0].v.normal = normals[vn_indice];
+				p_verts[v_indice][0].i++;
+				indice = v_indice + 1;
+			}
+			for(uint16_t k = 0; k < s; k++) {
+				if(p_verts[v_indice][k].v.normal.x == normals[vn_indice].x && p_verts[v_indice][k].v.normal.y == normals[vn_indice].y && p_verts[v_indice][k].v.normal.z == normals[vn_indice].z) {
+					if(k == 0) indice = v_indice + 1;
+					else indice = p_verts[v_indice][k].i + 1;
+					break;
+				}
+			}
+			if(indice == 0) {
+				p_verts[v_indice][0].i++;
+				p_verts[v_indice] = (IndicedVertex*)realloc((void*)(p_verts[v_indice]), (s+1) * sizeof(IndicedVertex));
+				p_verts[v_indice][s] = p_verts[v_indice][0];
+				p_verts[v_indice][s].v.normal = normals[vn_indice];
+				p_verts[v_indice][s].i = new_v_size;
+				new_v_size++;
+				indice = new_v_size;
+			}
+			indices[indice_i*3+j] = indice - 1;
 		}
+		if(c_read == ' ') {
+		c_read = fgetc(file);
+		if(c_read != '\n') {
+			indice_i++;
+			uint16_t str_i = 0;
+			while(c_read != '/') {	
+				str_read[str_i] = c_read;
+				str_i++;
+				c_read = fgetc(file);
+			}
+			str_read[str_i] = '\0';
+			uint16_t v_indice = atoi(str_read) - 1;
+			str_i = 0;
+			c_read = fgetc(file);
+			while(c_read != '/') {
+				c_read = fgetc(file);
+			}
+			c_read = fgetc(file);
+			while(c_read != '\n') {	
+				str_read[str_i] = c_read;
+				str_i++;
+				c_read = fgetc(file);
+			}
+			str_read[str_i] = '\0';
+			uint16_t vn_indice = atoi(str_read) - 1;
+			uint16_t indice = 0;
+			uint16_t s = p_verts[v_indice][0].i;
+			if(s == 0) {
+				p_verts[v_indice][0].v.normal = normals[vn_indice];
+				p_verts[v_indice][0].i++;
+				indice = v_indice + 1;
+			}
+			for(uint16_t j = 0; j < s; j++) {
+				if(p_verts[v_indice][j].v.normal.x == normals[vn_indice].x && p_verts[v_indice][j].v.normal.y == normals[vn_indice].y && p_verts[v_indice][j].v.normal.z == normals[vn_indice].z) {
+					if(j == 0) indice = v_indice + 1;
+					else indice = p_verts[v_indice][j].i + 1;
+					break;
+				}
+			}
+			if(indice == 0) {
+				p_verts[v_indice][0].i++;
+				p_verts[v_indice] = (IndicedVertex*)realloc((void*)(p_verts[v_indice]), (s+1) * sizeof(IndicedVertex));
+				p_verts[v_indice][s] = p_verts[v_indice][0];
+				p_verts[v_indice][s].v.normal = normals[vn_indice];
+				p_verts[v_indice][s].i = new_v_size;
+				new_v_size++;
+				indice = new_v_size;
+			}
+			indices[indice_i*3] = indices[(indice_i-1)*3];
+			indices[indice_i*3 + 1] = indices[(indice_i-1)*3 + 2];
+			indices[indice_i*3 + 2] = indice - 1;
+		}
+		}
+		indice_i++;
+		c_read = fgetc(file);
 	}
 	free(str_read);
-	new_m->indices = (uint16_t*)realloc(new_m->indices, sizeof(uint16_t) * indice_i * 3);
-	new_m->num_indices = indice_i * 3;
-	new_m->num_vertices = new_v_size - v_size;
+	Mesh new_m;
+	new_m.i_count = indice_i * 3;
+	*p_mesh = new_m;
 	return new_v_size;
 }
 
+/*
 uint16_t generate_mesh_given_uv(Mesh** pp_mesh, IndicedVertex** pa_vert, Vec2* uv, uint16_t v_size, FILE* file, uint16_t* beg_indices_and_f_sizes) {
 	uint16_t section_size = sizeof(beg_indices_and_f_sizes) / sizeof(uint16_t);
 	uint16_t f_size = 0;
@@ -757,19 +756,19 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 
 	VkDeviceSize old_v_size = v_size;
 	uint16_t** p_indices = (uint16_t**)malloc(group_size * sizeof(uint16_t*));
-	//if(vn_size == 0 && vt_size == 0) {
+	/*if(vn_size == 0 && vt_size == 0) {
 		for(uint16_t i = 0; i < group_size; i++) {
-			generate_mesh_minimal(new_m->meshes+i, file, p_verts, v_size, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
+			generate_mesh_minimal(new_m->meshes+i, file, p_verts, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
+			free(p_group_beg_indices_and_f_sizes[i]);
+		}
+	}*/
+	//else if(vt_size == 0) {
+		for(uint16_t i = 0; i < group_size; i++) {
+			v_size = generate_mesh_given_normals(new_m->meshes+i, file, p_verts, normals, v_size, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
 			free(p_group_beg_indices_and_f_sizes[i]);
 		}
 	//}
 	/*
-	else if(vt_size == 0) {
-		for(uint16_t i = 0; i < group_size; i++) {
-			v_size = generate_mesh_given_normals(new_m->pa_meshes+i, pa_vert, normals, v_size, new_m->VBO, file, pa_group_beg_indices_and_f_sizes[i]);
-			free(pa_group_beg_indices_and_f_sizes[i]);
-		}
-	}
 	else if(vn_size == 0) {
 		for(uint16_t i = 0; i < group_size; i++) {
 			v_size = generate_mesh_given_uv(new_m->pa_meshes+i, pa_vert, uv, v_size, new_m->VBO, file, pa_group_beg_indices_and_f_sizes[i]);
@@ -784,8 +783,6 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 	}
 	*/
 	fclose(file);
-	free(normals);
-	free(uv);
 	free(p_group_beg_indices_and_f_sizes);
 	new_m->v_size = v_size * sizeof(Vertex);
 	new_m->meshes[0].i_index = new_m->v_size;
@@ -794,7 +791,7 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 	}
 	
 	Vertex* vertices = (Vertex*)malloc(new_m->v_size);
-	//if(vt_size == 0 && vn_size == 0){
+	/*if(vt_size == 0 && vn_size == 0){
 		for(VkDeviceSize i = 0; i < v_size; i++) {
 			// since the index of p_verts[i][0] is = to i,
 			// p_verts[i][0].i is instead used to store sum
@@ -804,46 +801,55 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 			vertices[i].position.y *= -1.0f;
 			uint16_t sum = p_verts[i][0].i;
 			vertices[i].normal.x /= sum;
-			vertices[i].normal.y /= -1.0f * sum;
+			vertices[i].normal.y /= -sum;
 			vertices[i].normal.z /= sum;
 			vertices[i].uv.y = 1.0f - vertices[i].uv.y;
 			free(p_verts[i]);
 		}
-	//}
-	/*
+	}
 	else if(vn_size == 0) {
-		for(uint16_t i = 0; i < old_v_size; i++) {
+		for(VkDeviceSize i = 0; i < old_v_size; i++) {
 			vertices[i] = p_verts[i][0].v;
+			vertices[i].position.y *= -1.0f;
 			// sum is encoded in uv.x as
 			// uv.x + sum * 10
 			uint16_t sum = floor(vertices[i].uv.x * 0.1f);
 			
 			vertices[i].uv.x -= 10 * sum;
 			vertices[i].normal.x /= sum;
-			vertices[i].normal.y /= sum;
+			vertices[i].normal.y /= -sum;
 			vertices[i].normal.z /= sum;
+			vertices[i].uv.y = 1.0f - vertices[i].uv.y;
 			for(uint16_t j = 1; j < p_verts[i][0].i; j++) {
 				vertices[p_verts[i][j].i] = p_verts[i][j].v;
+				vertices[p_verts[i][j].i].position.y *= -1.0f;
 				sum = floor(vertices[p_verts[i][j].i].uv.x * 0.1f);
 				vertices[p_verts[i][j].i].uv.x -= 10 * sum;
 				vertices[p_verts[i][j].i].normal.x /= sum;
-				vertices[p_verts[i][j].i].normal.y /= sum;
+				vertices[p_verts[i][j].i].normal.y /= -sum;
 				vertices[p_verts[i][j].i].normal.z /= sum;
-			}
-		}
-	}
-	else {
-		for(uint16_t i = 0; i < old_v_size; i++) {
-			// since the index of p_verts[i][0] is = to i,
-			// p_verts[i][0].i is instead used to store len
-			vertices[i] = p_verts[i][0].v;
-			for(uint16_t j = 1; j < p_verts[i][0].i; j++) {
-				vertices[p_verts[i][j].i] = p_verts[i][j].v;
+				vertices[p_verts[i][j].i].uv.y = 1.0f - vertices[p_verts[i][j].i].uv.y;
 			}
 			free(p_verts[i]);
 		}
-	}
-	*/
+	}*/
+	//else {
+		for(long int i = 0; i < old_v_size; i++) {
+			// since the index of p_verts[i][0] is = to i,
+			// p_verts[i][0].i is instead used to store len
+			vertices[i] = p_verts[i][0].v;
+			vertices[i].position.y *= -1.0f;
+			vertices[i].normal.y *= -1.0f;
+			vertices[i].uv.y = 1.0f - vertices[i].uv.y;
+			for(uint16_t j = 1; j < p_verts[i][0].i; j++) {
+				vertices[p_verts[i][j].i] = p_verts[i][j].v;
+				vertices[p_verts[i][j].i].position.y *= -1.0f;
+				vertices[p_verts[i][j].i].normal.y *= -1.0f;
+				vertices[p_verts[i][j].i].uv.y * 1.0f - vertices[p_verts[i][j].i].uv.y;
+			}
+			free(p_verts[i]);
+		}
+	//}
 	free(p_verts);
 
 	VkBufferCreateInfo bufferCI {
@@ -873,6 +879,8 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 
 	memcpy(v_buffer_alloc_info.pMappedData, vertices, new_m->v_size);
 	free(vertices);
+	free(normals);
+	free(uv);
 	for(uint16_t i = 0; i < group_size; i++) {
 		memcpy(((char*)v_buffer_alloc_info.pMappedData) + new_m->meshes[i].i_index, p_indices[i], new_m->meshes[i].i_count * sizeof(uint16_t));
 		free(p_indices[i]);
