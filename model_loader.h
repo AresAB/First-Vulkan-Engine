@@ -111,9 +111,9 @@ void initialize_p_verts(IndicedVertex** p_verts, Vec3* normals, Vec2* uv, VkDevi
 
 void generate_mesh_minimal(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, uint16_t v_size, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
 	long int f_size = beg_indices_and_f_sizes[1];
-	uint16_t* indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 3);
+	uint16_t* indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 6);
 	*p_indices = indices;
-	uint16_t indice_i = 0;
+	VkDeviceSize indice_i = 0;
 	char c_read;
 	char* str_read = (char*)malloc(100 * sizeof(char));
 	fseek(file, beg_indices_and_f_sizes[0], SEEK_SET);
@@ -161,7 +161,54 @@ void generate_mesh_minimal(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, ui
 		p_verts[indices[3*indice_i+2]]->v.normal.y +=normal.y;
 		p_verts[indices[3*indice_i+2]]->v.normal.z +=normal.z;
 		p_verts[indices[3*indice_i+2]]->i++;
+		if(c_read == ' ') {
+		c_read = fgetc(file);
+		if(c_read != '\n') {
+			indice_i++;
+			uint16_t str_i = 0;
+			while(c_read != '/' && c_read != '\n') {	
+				str_read[str_i] = c_read;
+				str_i++;
+				c_read = fgetc(file);
+			}
+			str_read[str_i] = '\0';
+			indices[indice_i*3] = indices[indice_i*3-3];
+			indices[indice_i*3+1] = indices[indice_i*3-1];
+			indices[indice_i*3+2] = atoi(str_read) - 1;
+			a = p_verts[indices[3*indice_i]]->v.position;
+			ab = p_verts[indices[3*indice_i+1]]->v.position;
+			ab.x -= a.x;
+			ab.y -= a.y;
+			ab.z -= a.z;
+			ac = p_verts[indices[3*indice_i+2]]->v.position;
+			ac.x -= a.x;
+			ac.y -= a.y;
+			ac.z -= a.z;
+			normal = {
+				ab.y * ac.z - ab.z * ac.y,
+				ab.z * ac.x - ab.x * ac.z,
+				ab.x * ac.y - ab.y * ac.x
+			};
+			float mag = sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+			normal.x /= mag;
+			normal.y /= mag;
+			normal.z /= mag;
+			p_verts[indices[3*indice_i]]->v.normal.x +=normal.x;
+			p_verts[indices[3*indice_i]]->v.normal.y +=normal.y;
+			p_verts[indices[3*indice_i]]->v.normal.z +=normal.z;
+			p_verts[indices[3*indice_i]]->i++;
+			p_verts[indices[3*indice_i+1]]->v.normal.x +=normal.x;
+			p_verts[indices[3*indice_i+1]]->v.normal.y +=normal.y;
+			p_verts[indices[3*indice_i+1]]->v.normal.z +=normal.z;
+			p_verts[indices[3*indice_i+1]]->i++;
+			p_verts[indices[3*indice_i+2]]->v.normal.x +=normal.x;
+			p_verts[indices[3*indice_i+2]]->v.normal.y +=normal.y;
+			p_verts[indices[3*indice_i+2]]->v.normal.z +=normal.z;
+			p_verts[indices[3*indice_i+2]]->i++;
+		}
+		}
 		indice_i++;
+		if(c_read != '\n') fgets(str_read,100,file);
 		c_read = fgetc(file);
 	}
 	free(str_read);
@@ -737,6 +784,8 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 	}
 	*/
 	fclose(file);
+	free(normals);
+	free(uv);
 	free(p_group_beg_indices_and_f_sizes);
 	new_m->v_size = v_size * sizeof(Vertex);
 	new_m->meshes[0].i_index = new_m->v_size;
@@ -746,7 +795,7 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 	
 	Vertex* vertices = (Vertex*)malloc(new_m->v_size);
 	//if(vt_size == 0 && vn_size == 0){
-		for(uint16_t i = 0; i < v_size; i++) {
+		for(VkDeviceSize i = 0; i < v_size; i++) {
 			// since the index of p_verts[i][0] is = to i,
 			// p_verts[i][0].i is instead used to store sum
 			// of every instance of p_verts[i][*] in indices
@@ -755,7 +804,7 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 			vertices[i].position.y *= -1.0f;
 			uint16_t sum = p_verts[i][0].i;
 			vertices[i].normal.x /= sum;
-			vertices[i].normal.y /= sum;
+			vertices[i].normal.y /= -1.0f * sum;
 			vertices[i].normal.z /= sum;
 			vertices[i].uv.y = 1.0f - vertices[i].uv.y;
 			free(p_verts[i]);
@@ -824,8 +873,6 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 
 	memcpy(v_buffer_alloc_info.pMappedData, vertices, new_m->v_size);
 	free(vertices);
-	free(normals);
-	free(uv);
 	for(uint16_t i = 0; i < group_size; i++) {
 		memcpy(((char*)v_buffer_alloc_info.pMappedData) + new_m->meshes[i].i_index, p_indices[i], new_m->meshes[i].i_count * sizeof(uint16_t));
 		free(p_indices[i]);

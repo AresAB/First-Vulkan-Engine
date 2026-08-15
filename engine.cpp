@@ -1036,10 +1036,11 @@ void engine_draw_model(Engine* engine, uint32_t m_index, uint32_t p_index, uint3
 	vkCmdBindPipeline(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipelines[p_index]);
 	vkCmdBindDescriptorSets(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipeline_layout, 0, 1, &engine->desc_set, 0, nullptr);
 	vkCmdBindVertexBuffers(engine->command_buffers[engine->frame_index], 0, 1, &engine->models[m_index].v_buffer, &v_offset);
-	vkCmdBindIndexBuffer(engine->command_buffers[engine->frame_index], engine->models[m_index].v_buffer, engine->models[m_index].meshes[0].i_index, VK_INDEX_TYPE_UINT16);
-	vkCmdPushConstants(engine->command_buffers[engine->frame_index], engine->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine->shader_data_buffers[s_index][engine->frame_index].device_address);
-
-	vkCmdDrawIndexed(engine->command_buffers[engine->frame_index], engine->models[m_index].meshes[0].i_count, 3, 0, 0, 0);
+	for(auto i = 0; i < engine->models[m_index].mesh_count; i++) {
+		vkCmdBindIndexBuffer(engine->command_buffers[engine->frame_index], engine->models[m_index].v_buffer, engine->models[m_index].meshes[i].i_index, VK_INDEX_TYPE_UINT16);
+		vkCmdPushConstants(engine->command_buffers[engine->frame_index], engine->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine->shader_data_buffers[s_index][engine->frame_index].device_address);
+		vkCmdDrawIndexed(engine->command_buffers[engine->frame_index], engine->models[m_index].meshes[i].i_count, 3, 0, 0, 0);
+	}
 }
 
 void destroy_engine(Engine engine) {
