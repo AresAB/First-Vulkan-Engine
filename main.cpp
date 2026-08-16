@@ -324,14 +324,14 @@ void engine_update_shader_data(Engine* engine) {
 	for(auto i = 0; i < 3; i++) {
 		auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, 0.0f, 0.0f);
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), instance_pos);
-		data.model[i] = glm::scale(model, glm::vec3(0.01f));
+		data.model[i] = glm::scale(model, glm::vec3(1.0f));
 	}
 	memcpy(engine->shader_data_buffers[0][engine->frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
 
 	for(auto i = 0; i < 3; i++) {
 		auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, -3.0f, 0.0f);
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), instance_pos);
-		data.model[i] = glm::scale(model, glm::vec3(0.01f));
+		data.model[i] = glm::scale(model, glm::vec3(1.0f));
 	}
 	memcpy(engine->shader_data_buffers[1][engine->frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
 }
@@ -445,8 +445,7 @@ int main() {
 	engine_load_texture_ktx(&engine, 2, "assets/suzanne2.ktx");
 	engine_load_texture_descriptors(&engine, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	//engine_load_model(&engine, 0, "assets/suzanne.obj");
-	engine_load_model(&engine, 0, "assets/ball12.obj");
+	engine_load_model(&engine, 0, "assets/suzanne.obj");
 
 	engine_load_shader(&engine, 0, sizeof(ShaderData), "assets/shader.slang");
 	engine_load_shader(&engine, 1, sizeof(ShaderData), "assets/shader2.slang");

@@ -759,7 +759,7 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 
 	VkDeviceSize old_v_size = v_size;
 	uint16_t** p_indices = (uint16_t**)malloc(group_size * sizeof(uint16_t*));
-	/*if(vn_size == 0 && vt_size == 0) {
+	if(vn_size == 0 && vt_size == 0) {
 		for(uint16_t i = 0; i < group_size; i++) {
 			generate_mesh_minimal(new_m->meshes+i, file, p_verts, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
 			free(p_group_beg_indices_and_f_sizes[i]);
@@ -777,13 +777,12 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 			free(p_group_beg_indices_and_f_sizes[i]);
 		}
 	}
-	*/
-	//else {
+	else {
 		for(uint16_t i = 0; i < group_size; i++) {
 			v_size = generate_mesh(new_m->meshes+i, file, p_verts, normals, uv, v_size, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
 			free(p_group_beg_indices_and_f_sizes[i]);
 		}
-	//}
+	}
 	fclose(file);
 	free(p_group_beg_indices_and_f_sizes);
 	new_m->v_size = v_size * sizeof(Vertex);
@@ -793,7 +792,7 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 	}
 	
 	Vertex* vertices = (Vertex*)malloc(new_m->v_size);
-	/*if(vt_size == 0 && vn_size == 0){
+	if(vt_size == 0 && vn_size == 0){
 		for(VkDeviceSize i = 0; i < v_size; i++) {
 			// since the index of p_verts[i][0] is = to i,
 			// p_verts[i][0].i is instead used to store sum
@@ -834,8 +833,8 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 			}
 			free(p_verts[i]);
 		}
-	}*/
-	//else {
+	}
+	else {
 		for(long int i = 0; i < old_v_size; i++) {
 			// since the index of p_verts[i][0] is = to i,
 			// p_verts[i][0].i is instead used to store len
@@ -843,17 +842,15 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 			vertices[i].position.y *= -1.0f;
 			vertices[i].normal.y *= -1.0f;
 			vertices[i].uv.y = 1.0f - vertices[i].uv.y;
-			//printf("id: %ld, uv1: %f %f, v: %f %f %f, n: %f %f %f\n", i, vertices[i].uv.x, vertices[i].uv.y, vertices[i].position.x, vertices[i].position.y, vertices[i].position.z, vertices[i].normal.x, vertices[i].normal.y, vertices[i].normal.z);
 			for(uint16_t j = 1; j < p_verts[i][0].i; j++) {
 				vertices[p_verts[i][j].i] = p_verts[i][j].v;
 				vertices[p_verts[i][j].i].position.y *= -1.0f;
 				vertices[p_verts[i][j].i].normal.y *= -1.0f;
 				vertices[p_verts[i][j].i].uv.y = 1.0f - vertices[p_verts[i][j].i].uv.y;
-				//printf("id: %u, uv2: %f %f, v: %f %f %f, v: %f %f %f\n", p_verts[i][j].i, vertices[p_verts[i][j].i].uv.x, vertices[p_verts[i][j].i].uv.y, vertices[p_verts[i][j].i].position.x, vertices[p_verts[i][j].i].position.y, vertices[p_verts[i][j].i].position.z, vertices[p_verts[i][j].i].normal.x, vertices[p_verts[i][j].i].normal.y, vertices[p_verts[i][j].i].normal.z);
 			}
 			free(p_verts[i]);
 		}
-	//}
+	}
 	free(p_verts);
 
 	VkBufferCreateInfo bufferCI {
