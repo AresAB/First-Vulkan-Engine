@@ -5,6 +5,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 typedef struct Vec3 {
 	float x;
@@ -217,11 +218,11 @@ void generate_mesh_minimal(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, ui
 	*p_mesh = new_m;
 }
 
-VkDeviceSize generate_mesh_given_normals(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* normals, uint16_t v_size, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
+VkDeviceSize generate_mesh_given_normals(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* normals, VkDeviceSize v_size, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
 	long int f_size = beg_indices_and_f_sizes[1];
 	uint16_t* indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 6);
 	*p_indices = indices;
-	long int new_v_size = v_size;
+	VkDeviceSize new_v_size = v_size;
 	uint16_t indice_i = 0;
 	char c_read;
 	char* str_read = (char*)malloc(100 * sizeof(char));
@@ -340,80 +341,165 @@ VkDeviceSize generate_mesh_given_normals(Mesh* p_mesh, FILE* file, IndicedVertex
 	return new_v_size;
 }
 
-/*
-uint16_t generate_mesh_given_uv(Mesh** pp_mesh, IndicedVertex** pa_vert, Vec2* uv, uint16_t v_size, FILE* file, uint16_t* beg_indices_and_f_sizes) {
-	uint16_t section_size = sizeof(beg_indices_and_f_sizes) / sizeof(uint16_t);
-	uint16_t f_size = 0;
-	for(uint16_t i = 1; i < section_size; i += 2) {
-		f_size += beg_indices_and_f_sizes[i];
-	}
-	Mesh* new_m = (Mesh*)malloc(sizeof(Mesh));
-	*pp_mesh = new_m;
-	new_m->indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 6);
-	uint16_t new_v_size = v_size;
-	uint16_t indice_i = 0;
+
+VkDeviceSize generate_mesh_given_uv(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec2* uv, VkDeviceSize v_size, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
+	long int f_size = f_size += beg_indices_and_f_sizes[1];
+	uint16_t* indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 6);
+	*p_indices = indices;
+	VkDeviceSize new_v_size = v_size;
+	VkDeviceSize indice_i = 0;
 	char c_read;
-	char* str_read = (char*)malloc(1000 * sizeof(char));
+	char* str_read = (char*)malloc(100 * sizeof(char));
 	uint16_t* face = (uint16_t*)malloc(8 * sizeof(uint16_t));
-	for(uint16_t i = 0; i < section_size; i += 2){
-		fseek(file, beg_indices_and_f_sizes[i], SEEK_SET);
-		c_read = fgetc(file);
-		while(c_read == 'f') {
-			fseek(file, 1, SEEK_CUR);
-			for(uint16_t j = 0; j < 3; j++) {
-				uint16_t str_i = 0;
+	fseek(file, beg_indices_and_f_sizes[0], SEEK_SET);
+	c_read = fgetc(file);
+	while(c_read == 'f') {
+		fseek(file, 1, SEEK_CUR);
+		for(uint16_t j = 0; j < 3; j++) {
+			uint16_t str_i = 0;
+			c_read = fgetc(file);
+			while(c_read != '/') {	
+				str_read[str_i] = c_read;
+				str_i++;
 				c_read = fgetc(file);
-				while(c_read != '/') {	
-					str_read[str_i] = c_read;
-					str_i++;
-					c_read = fgetc(file);
-				}
-				str_read[str_i] = '\0';
-				uint16_t v_indice = atoi(str_read) - 1;
-				face[j*2] = v_indice;
-				str_i = 0;
+			}
+			str_read[str_i] = '\0';
+			VkDeviceSize v_indice = atoi(str_read) - 1;
+			face[j*2] = v_indice;
+			str_i = 0;
+			c_read = fgetc(file);
+			while(c_read != ' ' && c_read != '\n') {	
+				str_read[str_i] = c_read;
+				str_i++;
 				c_read = fgetc(file);
-				while(c_read != ' ' && c_read != '\n') {	
-					str_read[str_i] = c_read;
-					str_i++;
-					c_read = fgetc(file);
-				}
-				str_read[str_i] = '\0';
-				uint16_t vt_indice = atoi(str_read) - 1;
-				uint16_t indice = 0;
-				uint16_t s = pa_vert[v_indice][0].i;
-				if(s == 0) {
-					pa_vert[v_indice][0].v.uv = uv[vt_indice];
-					pa_vert[v_indice][0].i++;
-					indice = v_indice + 1;
-					face[j*2+1] = 0;
-				}
-				for(uint16_t k = 0; k < s; k++) {
-					if(pa_vert[v_indice][k].v.uv.x == uv[vt_indice].x && pa_vert[v_indice][k].v.uv.y == uv[vt_indice].y) {
-						if(k == 0) indice = v_indice + 1;
-						else indice = pa_vert[v_indice][k].i + 1;
-						face[j*2+1] = k;
-						break;
+				if(c_read == '/') {
+					while(c_read != ' ' && c_read != '\n') {	
+						c_read = fgetc(file);
 					}
 				}
-				if(indice == 0) {
-					pa_vert[v_indice][0].i++;
-					pa_vert[v_indice] = (IndicedVertex*)realloc((void*)(pa_vert[v_indice]), (s+1) * sizeof(IndicedVertex));
-					pa_vert[v_indice][s] = pa_vert[v_indice][0];
-					pa_vert[v_indice][s].v.uv = uv[vt_indice];
-					pa_vert[v_indice][s].i = new_v_size;
-					new_v_size++;
-					indice = new_v_size;
-					face[j*2+1] = s;
-				}
-				new_m->indices[indice_i*3+j] = indice - 1;
 			}
-			Vec3 a = pa_vert[face[0]][face[1]].v.position;
-			Vec3 ab = pa_vert[face[2]][face[3]].v.position;
+			str_read[str_i] = '\0';
+			VkDeviceSize vt_indice = atoi(str_read) - 1;
+			VkDeviceSize indice = 0;
+			uint16_t s = p_verts[v_indice][0].i;
+			if(s == 0) {
+				p_verts[v_indice][0].v.uv = uv[vt_indice];
+				p_verts[v_indice][0].i++;
+				indice = v_indice + 1;
+				face[j*2+1] = 0;
+			}
+			for(uint16_t k = 0; k < s; k++) {
+				if(fabs(p_verts[v_indice][k].v.uv.x - 10.0f * floor(p_verts[v_indice][k].v.uv.x * 0.1f) - uv[vt_indice].x) < 0.0001f && p_verts[v_indice][k].v.uv.y == uv[vt_indice].y) {
+					if(k == 0) indice = v_indice + 1;
+					else indice = p_verts[v_indice][k].i + 1;
+					face[j*2+1] = k;
+					break;
+				}
+			}
+			if(indice == 0) {
+				p_verts[v_indice][0].i++;
+				p_verts[v_indice] = (IndicedVertex*)realloc((void*)(p_verts[v_indice]), (s+1) * sizeof(IndicedVertex));
+				p_verts[v_indice][s] = p_verts[v_indice][0];
+				p_verts[v_indice][s].v.uv = uv[vt_indice];
+				p_verts[v_indice][s].i = new_v_size;
+				new_v_size++;
+				indice = new_v_size;
+				face[j*2+1] = s;
+			}
+			indices[indice_i*3+j] = indice - 1;
+		}
+		Vec3 a = p_verts[face[0]][face[1]].v.position;
+		Vec3 ab = p_verts[face[2]][face[3]].v.position;
+		ab.x -= a.x;
+		ab.y -= a.y;
+		ab.z -= a.z;
+		Vec3 ac = p_verts[face[4]][face[5]].v.position;
+		ac.x -= a.x;
+		ac.y -= a.y;
+		ac.z -= a.z;
+		Vec3 normal = {
+			ab.y * ac.z - ab.z * ac.y,
+			ab.z * ac.x - ab.x * ac.z,
+			ab.x * ac.y - ab.y * ac.x
+		};
+		float mag = sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+		normal.x /= mag;
+		normal.y /= mag;
+		normal.z /= mag;
+		p_verts[face[0]][face[1]].v.normal.x +=normal.x;
+		p_verts[face[0]][face[1]].v.normal.y +=normal.y;
+		p_verts[face[0]][face[1]].v.normal.z +=normal.z;
+		p_verts[face[0]][face[1]].v.uv.x += 10;
+		p_verts[face[2]][face[3]].v.normal.x +=normal.x;
+		p_verts[face[2]][face[3]].v.normal.y +=normal.y;
+		p_verts[face[2]][face[3]].v.normal.z +=normal.z;
+		p_verts[face[2]][face[3]].v.uv.x += 10;
+		p_verts[face[4]][face[5]].v.normal.x +=normal.x;
+		p_verts[face[4]][face[5]].v.normal.y +=normal.y;
+		p_verts[face[4]][face[5]].v.normal.z +=normal.z;
+		p_verts[face[4]][face[5]].v.uv.x += 10;
+		if(c_read == ' ') {
+		c_read = fgetc(file);
+		if(c_read != '\n') {
+			indice_i++;
+			uint16_t str_i = 0;
+			while(c_read != '/') {	
+				str_read[str_i] = c_read;
+				str_i++;
+				c_read = fgetc(file);
+			}
+			str_read[str_i] = '\0';
+			uint16_t v_indice = atoi(str_read) - 1;
+			face[6] = v_indice;
+			str_i = 0;
+			c_read = fgetc(file);
+			while(c_read != '\n') {	
+				str_read[str_i] = c_read;
+				str_i++;
+				c_read = fgetc(file);
+				if(c_read == '/') {
+					while(c_read != '\n') {	
+						c_read = fgetc(file);
+					}
+				}
+			}
+			str_read[str_i] = '\0';
+			uint16_t vt_indice = atoi(str_read) - 1;
+			uint16_t indice = 0;
+			uint16_t s = p_verts[v_indice][0].i;
+			if(s == 0) {
+				p_verts[v_indice][0].v.uv = uv[vt_indice];
+				p_verts[v_indice][0].i++;
+				indice = v_indice + 1;
+				face[7] = 0;
+			}
+			for(uint16_t k = 0; k < s; k++) {
+				if(p_verts[v_indice][k].v.uv.x == uv[vt_indice].x && p_verts[v_indice][k].v.uv.y == uv[vt_indice].y) {
+					if(k == 0) indice = v_indice + 1;
+					else indice = p_verts[v_indice][k].i + 1;
+					face[7] = k;
+					break;
+				}
+			}
+			if(indice == 0) {
+				p_verts[v_indice][0].i++;
+				p_verts[v_indice] = (IndicedVertex*)realloc((void*)(p_verts[v_indice]), (s+1) * sizeof(IndicedVertex));
+				p_verts[v_indice][s] = p_verts[v_indice][0];
+				p_verts[v_indice][s].v.uv = uv[vt_indice];
+				p_verts[v_indice][s].i = new_v_size;
+				new_v_size++;
+				indice = new_v_size;
+				face[7] = s;
+			}
+			indices[indice_i*3] = indices[(indice_i-1)*3];
+			indices[indice_i*3 + 1] = indices[(indice_i-1)*3 + 2];
+			indices[indice_i*3 + 2] = indice - 1;
+			Vec3 a = p_verts[face[0]][face[1]].v.position;
+			Vec3 ab = p_verts[face[4]][face[5]].v.position;
 			ab.x -= a.x;
 			ab.y -= a.y;
 			ab.z -= a.z;
-			Vec3 ac = pa_vert[face[4]][face[5]].v.position;
+			Vec3 ac = p_verts[face[6]][face[7]].v.position;
 			ac.x -= a.x;
 			ac.y -= a.y;
 			ac.z -= a.z;
@@ -426,123 +512,40 @@ uint16_t generate_mesh_given_uv(Mesh** pp_mesh, IndicedVertex** pa_vert, Vec2* u
 			normal.x /= mag;
 			normal.y /= mag;
 			normal.z /= mag;
-			pa_vert[face[0]][face[1]].v.normal.x +=normal.x;
-			pa_vert[face[0]][face[1]].v.normal.y +=normal.y;
-			pa_vert[face[0]][face[1]].v.normal.z +=normal.z;
-			pa_vert[face[0]][face[1]].v.uv.x += 10;
-			pa_vert[face[2]][face[3]].v.normal.x +=normal.x;
-			pa_vert[face[2]][face[3]].v.normal.y +=normal.y;
-			pa_vert[face[2]][face[3]].v.normal.z +=normal.z;
-			pa_vert[face[2]][face[3]].v.uv.x += 10;
-			pa_vert[face[4]][face[5]].v.normal.x +=normal.x;
-			pa_vert[face[4]][face[5]].v.normal.y +=normal.y;
-			pa_vert[face[4]][face[5]].v.normal.z +=normal.z;
-			pa_vert[face[4]][face[5]].v.uv.x += 10;
-			if(c_read == ' ') {
-			c_read = fgetc(file);
-			if(c_read != '\n') {
-				indice_i++;
-				uint16_t str_i = 0;
-				while(c_read != '/') {	
-					str_read[str_i] = c_read;
-					str_i++;
-					c_read = fgetc(file);
-				}
-				str_read[str_i] = '\0';
-				uint16_t v_indice = atoi(str_read) - 1;
-				face[6] = v_indice;
-				str_i = 0;
-				c_read = fgetc(file);
-				while(c_read != '\n') {	
-					str_read[str_i] = c_read;
-					str_i++;
-					c_read = fgetc(file);
-				}
-				str_read[str_i] = '\0';
-				uint16_t vt_indice = atoi(str_read) - 1;
-				uint16_t indice = 0;
-				uint16_t s = pa_vert[v_indice][0].i;
-				if(s == 0) {
-					pa_vert[v_indice][0].v.uv = uv[vt_indice];
-					pa_vert[v_indice][0].i++;
-					indice = v_indice + 1;
-					face[7] = 0;
-				}
-				for(uint16_t k = 0; k < s; k++) {
-					if(pa_vert[v_indice][k].v.uv.x == uv[vt_indice].x && pa_vert[v_indice][k].v.uv.y == uv[vt_indice].y) {
-						if(k == 0) indice = v_indice + 1;
-						else indice = pa_vert[v_indice][k].i + 1;
-						face[7] = k;
-						break;
-					}
-				}
-				if(indice == 0) {
-					pa_vert[v_indice][0].i++;
-					pa_vert[v_indice] = (IndicedVertex*)realloc((void*)(pa_vert[v_indice]), (s+1) * sizeof(IndicedVertex));
-					pa_vert[v_indice][s] = pa_vert[v_indice][0];
-					pa_vert[v_indice][s].v.uv = uv[vt_indice];
-					pa_vert[v_indice][s].i = new_v_size;
-					new_v_size++;
-					indice = new_v_size;
-					face[7] = s;
-				}
-				new_m->indices[indice_i*3] = new_m->indices[(indice_i-1)*3];
-				new_m->indices[indice_i*3 + 1] = new_m->indices[(indice_i-1)*3 + 2];
-				new_m->indices[indice_i*3 + 2] = indice - 1;
-				Vec3 a = pa_vert[face[0]][face[1]].v.position;
-				Vec3 ab = pa_vert[face[4]][face[5]].v.position;
-				ab.x -= a.x;
-				ab.y -= a.y;
-				ab.z -= a.z;
-				Vec3 ac = pa_vert[face[6]][face[7]].v.position;
-				ac.x -= a.x;
-				ac.y -= a.y;
-				ac.z -= a.z;
-				Vec3 normal = {
-					ab.y * ac.z - ab.z * ac.y,
-					ab.z * ac.x - ab.x * ac.z,
-					ab.x * ac.y - ab.y * ac.x
-				};
-				float mag = sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
-				normal.x /= mag;
-				normal.y /= mag;
-				normal.z /= mag;
-				pa_vert[face[0]][face[1]].v.normal.x +=normal.x;
-				pa_vert[face[0]][face[1]].v.normal.y +=normal.y;
-				pa_vert[face[0]][face[1]].v.normal.z +=normal.z;
-				pa_vert[face[0]][face[1]].v.uv.x += 10;
-				pa_vert[face[4]][face[5]].v.normal.x +=normal.x;
-				pa_vert[face[4]][face[5]].v.normal.y +=normal.y;
-				pa_vert[face[4]][face[5]].v.normal.z +=normal.z;
-				pa_vert[face[4]][face[5]].v.uv.x += 10;
-				pa_vert[face[6]][face[7]].v.normal.x +=normal.x;
-				pa_vert[face[6]][face[7]].v.normal.y +=normal.y;
-				pa_vert[face[6]][face[7]].v.normal.z +=normal.z;
-				pa_vert[face[6]][face[7]].v.uv.x += 10;
-			}
-			}
-			indice_i++;
-			c_read = fgetc(file);
+			p_verts[face[0]][face[1]].v.normal.x +=normal.x;
+			p_verts[face[0]][face[1]].v.normal.y +=normal.y;
+			p_verts[face[0]][face[1]].v.normal.z +=normal.z;
+			p_verts[face[0]][face[1]].v.uv.x += 10;
+			p_verts[face[4]][face[5]].v.normal.x +=normal.x;
+			p_verts[face[4]][face[5]].v.normal.y +=normal.y;
+			p_verts[face[4]][face[5]].v.normal.z +=normal.z;
+			p_verts[face[4]][face[5]].v.uv.x += 10;
+			p_verts[face[6]][face[7]].v.normal.x +=normal.x;
+			p_verts[face[6]][face[7]].v.normal.y +=normal.y;
+			p_verts[face[6]][face[7]].v.normal.z +=normal.z;
+			p_verts[face[6]][face[7]].v.uv.x += 10;
 		}
+		}
+		indice_i++;
+		c_read = fgetc(file);
 	}
 	free(str_read);
 	free(face);
-	new_m->indices = (uint16_t*)realloc(new_m->indices, sizeof(uint16_t) * indice_i * 3);
-	new_m->num_indices = indice_i * 3;
-	new_m->num_vertices = new_v_size - v_size;
+	Mesh new_m;
+	new_m.i_count = indice_i * 3;
+	*p_mesh = new_m;
 	return new_v_size;
 }
-*/
 
-uint16_t generate_mesh(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* normals, Vec2* uv, uint16_t v_size, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
-	uint16_t f_size = beg_indices_and_f_sizes[1];
+VkDeviceSize generate_mesh(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* normals, Vec2* uv, VkDeviceSize v_size, uint16_t** p_indices, long int* beg_indices_and_f_sizes) {
+	VkDeviceSize f_size = beg_indices_and_f_sizes[1];
 	uint16_t* indices = (uint16_t*)malloc(sizeof(uint16_t) * f_size * 6);
 	*p_indices = indices;
-	uint16_t new_v_size = v_size;
-	uint16_t indice_i = 0;
+	VkDeviceSize new_v_size = v_size;
+	VkDeviceSize indice_i = 0;
 	char c_read;
-	char* str_read = (char*)malloc(1000 * sizeof(char));
-	fseek(file, beg_indices_and_f_sizes[1], SEEK_SET);
+	char* str_read = (char*)malloc(100 * sizeof(char));
+	fseek(file, beg_indices_and_f_sizes[0], SEEK_SET);
 	c_read = fgetc(file);
 	while(c_read == 'f') {
 		fseek(file, 1, SEEK_CUR);
@@ -612,7 +615,7 @@ uint16_t generate_mesh(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* 
 				c_read = fgetc(file);
 			}
 			str_read[str_i] = '\0';
-			uint16_t v_indice = atoi(str_read) - 1;
+			VkDeviceSize v_indice = atoi(str_read) - 1;
 			str_i = 0;
 			c_read = fgetc(file);
 			while(c_read != '/') {	
@@ -621,7 +624,7 @@ uint16_t generate_mesh(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* 
 				c_read = fgetc(file);
 			}
 			str_read[str_i] = '\0';
-			uint16_t vt_indice = atoi(str_read) - 1;
+			VkDeviceSize vt_indice = atoi(str_read) - 1;
 			str_i = 0;
 			c_read = fgetc(file);
 			while(c_read != '\n') {	
@@ -630,8 +633,8 @@ uint16_t generate_mesh(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* 
 				c_read = fgetc(file);
 			}
 			str_read[str_i] = '\0';
-			uint16_t vn_indice = atoi(str_read) - 1;
-			uint16_t indice = 0;
+			VkDeviceSize vn_indice = atoi(str_read) - 1;
+			VkDeviceSize indice = 0;
 			uint16_t s = p_verts[v_indice][0].i;
 			if(s == 0) {
 				p_verts[v_indice][0].v.normal = normals[vn_indice];
@@ -640,7 +643,7 @@ uint16_t generate_mesh(Mesh* p_mesh, FILE* file, IndicedVertex** p_verts, Vec3* 
 				indice = v_indice + 1;
 			}
 			for(uint16_t j = 0; j < s; j++) {
-				if(p_verts[v_indice][j].v.uv.x == uv[vt_indice].x && p_verts[v_indice][j].v.uv.y == uv[vt_indice].y && p_verts[v_indice][j].v.normal.x == normals[vn_indice].x && p_verts[v_indice][j].v.normal.y == normals[vn_indice].y && p_verts[v_indice][j].v.normal.z == normals[vn_indice].z) {
+				if(fabs(p_verts[v_indice][j].v.uv.x - 10.0f * floor(p_verts[v_indice][j].v.uv.x * 0.1f) - uv[vt_indice].x) < 0.0001f && p_verts[v_indice][j].v.uv.y == uv[vt_indice].y && p_verts[v_indice][j].v.normal.x == normals[vn_indice].x && p_verts[v_indice][j].v.normal.y == normals[vn_indice].y && p_verts[v_indice][j].v.normal.z == normals[vn_indice].z) {
 					if(j == 0) indice = v_indice + 1;
 					else indice = p_verts[v_indice][j].i + 1;
 					break;
@@ -761,27 +764,26 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 			generate_mesh_minimal(new_m->meshes+i, file, p_verts, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
 			free(p_group_beg_indices_and_f_sizes[i]);
 		}
-	}*/
-	//else if(vt_size == 0) {
+	}
+	else if(vt_size == 0) {
 		for(uint16_t i = 0; i < group_size; i++) {
 			v_size = generate_mesh_given_normals(new_m->meshes+i, file, p_verts, normals, v_size, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
 			free(p_group_beg_indices_and_f_sizes[i]);
 		}
-	//}
-	/*
+	}
 	else if(vn_size == 0) {
 		for(uint16_t i = 0; i < group_size; i++) {
-			v_size = generate_mesh_given_uv(new_m->pa_meshes+i, pa_vert, uv, v_size, new_m->VBO, file, pa_group_beg_indices_and_f_sizes[i]);
-			free(pa_group_beg_indices_and_f_sizes[i]);
-		}
-	}
-	else {
-		for(uint16_t i = 0; i < group_size; i++) {
-			v_size = generate_mesh(new_m->meshes+i, file, p_verts, normals, uv, v_size, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
+			v_size = generate_mesh_given_uv(new_m->meshes+i, file, p_verts, uv, v_size, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
 			free(p_group_beg_indices_and_f_sizes[i]);
 		}
 	}
 	*/
+	//else {
+		for(uint16_t i = 0; i < group_size; i++) {
+			v_size = generate_mesh(new_m->meshes+i, file, p_verts, normals, uv, v_size, p_indices+i, p_group_beg_indices_and_f_sizes[i]);
+			free(p_group_beg_indices_and_f_sizes[i]);
+		}
+	//}
 	fclose(file);
 	free(p_group_beg_indices_and_f_sizes);
 	new_m->v_size = v_size * sizeof(Vertex);
@@ -815,7 +817,7 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 			// uv.x + sum * 10
 			uint16_t sum = floor(vertices[i].uv.x * 0.1f);
 			
-			vertices[i].uv.x -= 10 * sum;
+			vertices[i].uv.x -= 10.0f * sum;
 			vertices[i].normal.x /= sum;
 			vertices[i].normal.y /= -sum;
 			vertices[i].normal.z /= sum;
@@ -841,11 +843,13 @@ void load_model(VmaAllocator allocator, Model* new_m, const char* filename) {
 			vertices[i].position.y *= -1.0f;
 			vertices[i].normal.y *= -1.0f;
 			vertices[i].uv.y = 1.0f - vertices[i].uv.y;
+			//printf("id: %ld, uv1: %f %f, v: %f %f %f, n: %f %f %f\n", i, vertices[i].uv.x, vertices[i].uv.y, vertices[i].position.x, vertices[i].position.y, vertices[i].position.z, vertices[i].normal.x, vertices[i].normal.y, vertices[i].normal.z);
 			for(uint16_t j = 1; j < p_verts[i][0].i; j++) {
 				vertices[p_verts[i][j].i] = p_verts[i][j].v;
 				vertices[p_verts[i][j].i].position.y *= -1.0f;
 				vertices[p_verts[i][j].i].normal.y *= -1.0f;
-				vertices[p_verts[i][j].i].uv.y * 1.0f - vertices[p_verts[i][j].i].uv.y;
+				vertices[p_verts[i][j].i].uv.y = 1.0f - vertices[p_verts[i][j].i].uv.y;
+				//printf("id: %u, uv2: %f %f, v: %f %f %f, v: %f %f %f\n", p_verts[i][j].i, vertices[p_verts[i][j].i].uv.x, vertices[p_verts[i][j].i].uv.y, vertices[p_verts[i][j].i].position.x, vertices[p_verts[i][j].i].position.y, vertices[p_verts[i][j].i].position.z, vertices[p_verts[i][j].i].normal.x, vertices[p_verts[i][j].i].normal.y, vertices[p_verts[i][j].i].normal.z);
 			}
 			free(p_verts[i]);
 		}
