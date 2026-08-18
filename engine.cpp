@@ -107,6 +107,11 @@ struct Engine {
 	uint32_t image_index = 0;
 	float cam_mv_spd;
 	float cam_rot_spd;
+	float cam_n_plane;
+	float cam_f_plane;
+	float cam_plane_spd;
+	float og_cam_n_plane;
+	float og_cam_f_plane;
 	uint16_t frame_count;
 	bool closing = false;
 	bool update_swapchain = false;
@@ -123,6 +128,9 @@ struct EngineCreateInfo {
 	uint32_t shader_count;
 	float cam_mv_spd = 0.000005f;
 	float cam_rot_spd = 0.005f;
+	float cam_n_plane = 0.1f;
+	float cam_f_plane = 32.0f;
+	float cam_plane_spd = 0.05f;
 	int16_t gpu_index = -1;
 	uint16_t frame_count = 2;
 };
@@ -140,6 +148,11 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	engine.cam_rot_mat = engine.og_cam_rot_mat;
 	engine.cam_mv_spd = engineCI.cam_mv_spd;
 	engine.cam_rot_spd = engineCI.cam_rot_spd;
+	engine.cam_n_plane = engineCI.cam_n_plane;
+	engine.og_cam_n_plane = engine.cam_n_plane;
+	engine.cam_f_plane = engineCI.cam_f_plane;
+	engine.og_cam_f_plane = engine.cam_f_plane;
+	engine.cam_plane_spd = engineCI.cam_plane_spd;
 	engine.model_count = engineCI.model_count;
 	engine.shader_count = engineCI.shader_count;
 

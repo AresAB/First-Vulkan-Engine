@@ -172,9 +172,16 @@ void engine_poll_scancodes(Engine* engine) {
 	// Camera Controls
 	float cam_mv_spd = engine->cam_mv_spd;
 	float cam_rot_spd = engine->cam_rot_spd;
+	float cam_plane_spd = engine->cam_plane_spd;
 	if(key_states[SDL_SCANCODE_LSHIFT] || key_states[SDL_SCANCODE_RSHIFT]) {
 		cam_mv_spd *= 2;
 		cam_rot_spd *= 2;
+		cam_plane_spd *= 2;
+	}
+	if(key_states[SDL_SCANCODE_LCTRL] || key_states[SDL_SCANCODE_RCTRL]) {
+		cam_mv_spd *= 0.25;
+		cam_rot_spd *= 0.25;
+		cam_plane_spd *= 0.25;
 	}
 	if(key_states[SDL_SCANCODE_A]) {
 		engine->cam_pos += cam_mv_spd * engine->deltatime * glm::vec3(1.0f, 0.0f, 0.0f) * glm::mat3(engine->cam_rot_mat);
@@ -217,6 +224,24 @@ void engine_poll_scancodes(Engine* engine) {
 	}
 	if(key_states[SDL_SCANCODE_I]) {
 		engine->cam_rot_mat = engine->og_cam_rot_mat;
+	}
+	if(key_states[SDL_SCANCODE_F]) {
+		engine->cam_f_plane += cam_plane_spd;
+	}
+	if(key_states[SDL_SCANCODE_G]) {
+		engine->cam_n_plane += cam_plane_spd;
+	}
+	if(key_states[SDL_SCANCODE_C]) {
+		engine->cam_f_plane -= cam_plane_spd;
+	}
+	if(key_states[SDL_SCANCODE_V]) {
+		engine->cam_n_plane -= cam_plane_spd;
+	}
+	if(key_states[SDL_SCANCODE_B]) {
+		engine->cam_f_plane = engine->og_cam_f_plane;
+	}
+	if(key_states[SDL_SCANCODE_N]) {
+		engine->cam_n_plane = engine->og_cam_n_plane;
 	}
 }
 
@@ -319,7 +344,8 @@ void engine_begin_rendering(Engine* engine) {
 
 void engine_update_shader_data(Engine* engine) {
 	ShaderData data{};
-	data.projection = glm::perspective(glm::radians(45.0f), (float)engine->window_width / (float)engine->window_height, 0.1f, 32.0f);
+	//printf("check: %f %f\n", engine->cam_n_plane, engine->cam_f_plane);
+	data.projection = glm::perspective(glm::radians(45.0f), (float)engine->window_width / (float)engine->window_height, engine->cam_n_plane, engine->cam_f_plane);
 	data.view = glm::translate(engine->cam_rot_mat, engine->cam_pos);
 	for(auto i = 0; i < 3; i++) {
 		auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, 0.0f, 0.0f);
