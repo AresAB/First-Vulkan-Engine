@@ -118,19 +118,19 @@ struct Engine {
 };
 
 struct EngineCreateInfo {
-	glm::mat4 cam_rot_mat{ glm::mat4(1.0f) };
-	glm::vec3 cam_pos{ 0.0f, 0.0f, -6.0f };
+	glm::mat4 cam_starting_rotation_matrix{ glm::mat4(1.0f) };
+	glm::vec3 cam_starting_position{ 0.0f, 0.0f, -6.0f };
 	VkFormat image_format = VK_FORMAT_B8G8R8A8_SRGB;
 	VkColorSpaceKHR color_space = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 	VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
 	uint32_t texture_count;
 	uint32_t model_count;
 	uint32_t shader_count;
-	float cam_mv_spd = 0.000005f;
-	float cam_rot_spd = 0.005f;
-	float cam_n_plane = 0.1f;
-	float cam_f_plane = 32.0f;
-	float cam_plane_spd = 0.05f;
+	float cam_move_speed = 0.000005f;
+	float cam_rotation_speed = 0.005f;
+	float cam_near_plane = 0.1f;
+	float cam_far_plane = 32.0f;
+	float cam_plane_move_speed = 0.05f;
 	int16_t gpu_index = -1;
 	uint16_t frame_count = 2;
 };
@@ -142,17 +142,17 @@ Engine create_engine(EngineCreateInfo engineCI) {
 
 	Engine engine{};
 	engine.frame_count = engineCI.frame_count;
-	engine.og_cam_pos = engineCI.cam_pos;
+	engine.og_cam_pos = engineCI.cam_starting_position;
 	engine.cam_pos = engine.og_cam_pos;
-	engine.og_cam_rot_mat = engineCI.cam_rot_mat;
+	engine.og_cam_rot_mat = engineCI.cam_starting_rotation_matrix;
 	engine.cam_rot_mat = engine.og_cam_rot_mat;
-	engine.cam_mv_spd = engineCI.cam_mv_spd;
-	engine.cam_rot_spd = engineCI.cam_rot_spd;
-	engine.cam_n_plane = engineCI.cam_n_plane;
+	engine.cam_mv_spd = engineCI.cam_move_speed;
+	engine.cam_rot_spd = engineCI.cam_rotation_speed;
+	engine.cam_n_plane = engineCI.cam_near_plane;
 	engine.og_cam_n_plane = engine.cam_n_plane;
-	engine.cam_f_plane = engineCI.cam_f_plane;
+	engine.cam_f_plane = engineCI.cam_far_plane;
 	engine.og_cam_f_plane = engine.cam_f_plane;
-	engine.cam_plane_spd = engineCI.cam_plane_spd;
+	engine.cam_plane_spd = engineCI.cam_plane_move_speed;
 	engine.model_count = engineCI.model_count;
 	engine.shader_count = engineCI.shader_count;
 
