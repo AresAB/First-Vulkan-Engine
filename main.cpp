@@ -409,6 +409,10 @@ void engine_render_loop(Engine engine) {
 
 		// First round of input handling
 		engine_poll_events(&engine);
+		// Recreate Swapchain
+		if(engine.update_swapchain) {
+			engine_recreate_swapchain(&engine);
+		}
 
 		engine_update_shader_data(&engine);
 
@@ -424,11 +428,6 @@ void engine_render_loop(Engine engine) {
 
 		// Poll events part 2
 		engine_poll_scancodes(&engine);
-		
-		// Recreate Swapchain
-		if(engine.update_swapchain) {
-			engine_recreate_swapchain(&engine);
-		}
 	}
 }
 

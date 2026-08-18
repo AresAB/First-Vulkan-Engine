@@ -47,8 +47,8 @@ static inline void chk_swapchain(VkResult result, bool* update_swapchain, int li
 }
 
 struct ShaderDataBuffer {
-	VmaAllocation allocation{ VK_NULL_HANDLE };
 	VmaAllocationInfo allocation_info{};
+	VmaAllocation allocation{ VK_NULL_HANDLE };
 	VkBuffer buffer{ VK_NULL_HANDLE };
 	VkDeviceAddress device_address{};
 };
@@ -59,6 +59,13 @@ struct Texture {
 	VkSampler sampler{ VK_NULL_HANDLE };
 };
 struct Engine {
+	VkSwapchainCreateInfoKHR swapchainCI;
+	VkImageCreateInfo depth_imageCI;
+	glm::mat4 og_cam_rot_mat;
+	glm::mat4 cam_rot_mat;
+	VkSurfaceCapabilitiesKHR surface_caps;
+	glm::vec3 og_cam_pos;
+	glm::vec3 cam_pos;
 	VkInstance instance{ VK_NULL_HANDLE };
 	VkPhysicalDevice physical_device{ VK_NULL_HANDLE };
 	VkDevice device{ VK_NULL_HANDLE };
@@ -66,30 +73,19 @@ struct Engine {
 	VmaAllocator allocator{ VK_NULL_HANDLE };
 	SDL_Window* window;
 	VkSurfaceKHR surface{ VK_NULL_HANDLE };
-	VkSurfaceCapabilitiesKHR surface_caps;
-	VkSwapchainCreateInfoKHR swapchainCI;
 	VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-	uint32_t sc_image_count = 0;
 	VkImage* sc_images;
 	VkImageView* sc_image_views;
-	VkFormat depth_format = VK_FORMAT_UNDEFINED;
-	int window_width;
-	int window_height;
 	VkImage depth_image;
-	VkImageCreateInfo depth_imageCI;
-	VmaAllocation depth_image_allocation;
 	VkImageView depth_image_view;
-	uint32_t model_count;
+	VmaAllocation depth_image_allocation;
 	Model* models;
-	uint16_t frame_count;
-	uint32_t shader_count;
 	ShaderDataBuffer** shader_data_buffers;
 	VkCommandBuffer* command_buffers;
 	VkFence* fences;
 	VkSemaphore* image_acquired_semaphores;
 	VkSemaphore* render_complete_semaphores;
 	VkCommandPool command_pool{ VK_NULL_HANDLE };
-	uint32_t texture_count;
 	Texture* textures;
 	VkDescriptorImageInfo* texture_descriptors;
 	VkDescriptorSetLayout desc_set_layout_tex;
@@ -98,33 +94,37 @@ struct Engine {
 	VkShaderModule* shader_modules;
 	VkPipelineLayout pipeline_layout{ VK_NULL_HANDLE };
 	VkPipeline* pipelines;
-	bool closing = false;
-	bool update_swapchain = false;
-	uint32_t frame_index = 0;
-	uint32_t image_index = 0;
-	glm::vec3 og_cam_pos;
-	glm::vec3 cam_pos;
-	glm::mat4 og_cam_rot_mat;
-	glm::mat4 cam_rot_mat;
-	float cam_mv_spd;
-	float cam_rot_spd;
 	uint64_t last_time;
 	uint64_t deltatime = 0;
+	VkFormat depth_format = VK_FORMAT_UNDEFINED;
+	int window_width;
+	int32_t window_height;
+	uint32_t sc_image_count = 0;
+	uint32_t model_count;
+	uint32_t shader_count;
+	uint32_t texture_count;
+	uint32_t frame_index = 0;
+	uint32_t image_index = 0;
+	float cam_mv_spd;
+	float cam_rot_spd;
+	uint16_t frame_count;
+	bool closing = false;
+	bool update_swapchain = false;
 };
 
 struct EngineCreateInfo {
-	int gpu_index = -1;
+	glm::mat4 cam_rot_mat{ glm::mat4(1.0f) };
+	glm::vec3 cam_pos{ 0.0f, 0.0f, -6.0f };
 	VkFormat image_format = VK_FORMAT_B8G8R8A8_SRGB;
 	VkColorSpaceKHR color_space = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 	VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-	uint16_t frame_count = 2;
-	glm::vec3 cam_pos{ 0.0f, 0.0f, -6.0f };
-	glm::mat4 cam_rot_mat{ glm::mat4(1.0f) };
-	float cam_mv_spd = 0.000005f;
-	float cam_rot_spd = 0.005f;
 	uint32_t texture_count;
 	uint32_t model_count;
 	uint32_t shader_count;
+	float cam_mv_spd = 0.000005f;
+	float cam_rot_spd = 0.005f;
+	int16_t gpu_index = -1;
+	uint16_t frame_count = 2;
 };
 
 Engine create_engine(EngineCreateInfo engineCI) {
