@@ -115,6 +115,8 @@ struct Engine {
 	uint16_t frame_count;
 	bool closing = false;
 	bool update_swapchain = false;
+	bool wireframe_enabled;
+	bool is_wireframe = false;
 };
 
 struct EngineCreateInfo {
@@ -133,6 +135,7 @@ struct EngineCreateInfo {
 	float cam_plane_move_speed = 0.05f;
 	int16_t gpu_index = -1;
 	uint16_t frame_count = 2;
+	bool wireframe_enabled = false;
 };
 
 Engine create_engine(EngineCreateInfo engineCI) {
@@ -155,6 +158,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	engine.cam_plane_spd = engineCI.cam_plane_move_speed;
 	engine.model_count = engineCI.model_count;
 	engine.shader_count = engineCI.shader_count;
+	engine.wireframe_enabled = engineCI.wireframe_enabled;
 
 	// Create our Vulkan Instance
 	// -------------------------------
@@ -282,6 +286,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	// enable stuff related to the actual graphics pipeline
 	// structure, like geometry and tessellation shaders
 	VkPhysicalDeviceFeatures enabled_vk_1_0_features{
+		.fillModeNonSolid = VK_TRUE,
 		.samplerAnisotropy = VK_TRUE
 	};
 
@@ -521,7 +526,12 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	engine.models = (Model*)malloc(engine.model_count * sizeof(Model));
 	engine.shader_data_buffers = (ShaderDataBuffer**)malloc(engine.shader_count * sizeof(ShaderDataBuffer*));
 	engine.shader_modules = (VkShaderModule*)malloc(engine.shader_count * sizeof(VkShaderModule));
-	engine.pipelines = (VkPipeline*)malloc(engine.shader_count * sizeof(VkPipeline));
+	if(engine.wireframe_enabled) {
+		engine.pipelines = (VkPipeline*)malloc(engine.shader_count * sizeof(VkPipeline) * 2);
+	}
+	else {
+		engine.pipelines = (VkPipeline*)malloc(engine.shader_count * sizeof(VkPipeline));
+	}
 
 	return engine;
 }
@@ -997,6 +1007,12 @@ void engine_create_basic_pipelines(Engine* engine, uint32_t* indices, uint32_t i
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
 		.lineWidth = 1.0f
 	};
+	// Only used if wireframe is enabled
+	VkPipelineRasterizationStateCreateInfo rasterization_state_wireframeCI {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		.polygonMode = VK_POLYGON_MODE_LINE,
+		.lineWidth = 1.0f
+	};
 	// Set to default (we aren't really using them).
 	VkPipelineMultisampleStateCreateInfo multisample_stateCI {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
@@ -1004,7 +1020,8 @@ void engine_create_basic_pipelines(Engine* engine, uint32_t* indices, uint32_t i
 	};
 
 	VkPipelineShaderStageCreateInfo* shader_stages = (VkPipelineShaderStageCreateInfo*)malloc(sizeof(VkPipelineShaderStageCreateInfo) * indices_size * 2);
-	VkGraphicsPipelineCreateInfo* pipelineCIs = (VkGraphicsPipelineCreateInfo*)malloc(sizeof(VkGraphicsPipelineCreateInfo) * indices_size);
+	uint16_t r = engine->wireframe_enabled ? 2 : 1;
+	VkGraphicsPipelineCreateInfo* pipelineCIs = (VkGraphicsPipelineCreateInfo*)malloc(sizeof(VkGraphicsPipelineCreateInfo) * indices_size * r);
 	for(auto i = 0; i < indices_size; i++) {
 		shader_stages[i*2] = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = engine->shader_modules[indices[i]], .pName = "main" };
 		shader_stages[i*2 + 1] = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = engine->shader_modules[indices[i]], .pName = "main" };
@@ -1033,18 +1050,26 @@ void engine_create_basic_pipelines(Engine* engine, uint32_t* indices, uint32_t i
 			pipelineCI.flags = VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
 		}
 		pipelineCIs[i] = pipelineCI;
+		if(engine->wireframe_enabled) {
+			pipelineCIs[i+indices_size] = pipelineCIs[i];
+			pipelineCIs[i+indices_size].pRasterizationState = &rasterization_state_wireframeCI;
+		}
 	}
-	VkPipeline* pipelines = (VkPipeline*)malloc(sizeof(VkPipeline) * indices_size);
-	chk(vkCreateGraphicsPipelines(engine->device, VK_NULL_HANDLE, indices_size, pipelineCIs, nullptr, pipelines), __LINE__);
+	VkPipeline* pipelines = (VkPipeline*)malloc(sizeof(VkPipeline) * indices_size * r);
+	chk(vkCreateGraphicsPipelines(engine->device, VK_NULL_HANDLE, indices_size * r, pipelineCIs, nullptr, pipelines), __LINE__);
 	free(shader_stages);
 	free(pipelineCIs);
 	for(auto i = 0; i < indices_size; i++) {
 		engine->pipelines[indices[i]] = pipelines[i];
+		if(engine->wireframe_enabled) {
+			engine->pipelines[indices[i]+indices_size] = pipelines[i+indices_size];
+		}
 	}
 	free(pipelines);
 }
 
 void engine_draw_model(Engine* engine, uint32_t m_index, uint32_t p_index, uint32_t s_index) {
+	if(engine->is_wireframe) p_index += engine->shader_count;
 	VkDeviceSize v_offset = 0;
 	vkCmdBindPipeline(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipelines[p_index]);
 	vkCmdBindDescriptorSets(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipeline_layout, 0, 1, &engine->desc_set, 0, nullptr);
@@ -1100,6 +1125,9 @@ void destroy_engine(Engine engine) {
 	vkDestroyPipelineLayout(engine.device, engine.pipeline_layout, nullptr);
 	for(auto i = 0; i < engine.shader_count; i++ ) {
 		vkDestroyPipeline(engine.device, engine.pipelines[i], nullptr);
+		if(engine.wireframe_enabled) {
+			vkDestroyPipeline(engine.device, engine.pipelines[i * engine.shader_count], nullptr);
+		}
 	}
 	free(engine.pipelines);
 	vkDestroySwapchainKHR(engine.device, engine.swapchain, nullptr);

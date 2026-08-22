@@ -19,6 +19,10 @@ void engine_poll_events(Engine *engine) {
 		if(event.type == SDL_EVENT_WINDOW_RESIZED) {
 			engine->update_swapchain = true;
 		}
+		// Wireframe Mode Keybind
+		if(engine->wireframe_enabled && event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_E) {
+			engine->is_wireframe = !engine->is_wireframe;
+		}
 		// Screenshot Keybind
 		if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_R) {
 			VkMemoryRequirements image_mem_reqs;
@@ -463,7 +467,8 @@ int main(int argc, char* argv[]) {
 	EngineCreateInfo engineCI{ 
 		.texture_count = 3,
 		.model_count = 1,
-		.shader_count = 2
+		.shader_count = 2,
+		.wireframe_enabled = true
 	};
 	Engine engine = create_engine(engineCI);
 	
@@ -474,8 +479,8 @@ int main(int argc, char* argv[]) {
 
 	engine_load_model(&engine, 0, "assets/suzanne.obj");
 
-	engine_load_shader(&engine, 0, sizeof(ShaderData), (scene_filepath + "shaders/shader.slang").c_str());
-	engine_load_shader(&engine, 1, sizeof(ShaderData), (scene_filepath + "shaders/shader2.slang").c_str());
+	engine_load_shader(&engine, 0, sizeof(ShaderData), (scene_filepath + "/shaders/shader.slang").c_str());
+	engine_load_shader(&engine, 1, sizeof(ShaderData), (scene_filepath + "/shaders/shader2.slang").c_str());
 
 	engine_create_pipeline_layout(&engine);
 	uint32_t pipeline_indices[2] = {0, 1};
