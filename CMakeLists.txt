@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 include(FetchContent)
 set(NAME vulkan_engine)
+set(SCENE "." CACHE FILEPATH "Scene filepath")
 project(${NAME})
 
 if (NOT IS_DIRECTORY $ENV{VULKAN_SDK})
@@ -15,9 +16,9 @@ endif()
 
 # SDL3, Volk, VMA, glm and Slang are taken from the SDK
 include_directories(SYSTEM $ENV{VULKAN_SDK}/include)
+include_directories(SYSTEM internal)
+include_directories(SYSTEM ${SCENE}/include)
 # These are not part of the SDK
-include_directories(external/tinyobj)
-
 set(KTX_GIT_VERSION_FULL "v4.3.2")
 add_subdirectory(external/ktx)
 
@@ -47,7 +48,7 @@ if(MSVC)
 endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 
-add_executable(${NAME} main.cpp assets/shader.slang)
+add_executable(${NAME} ${SCENE}/main.cpp)
 target_compile_definitions(${NAME} PRIVATE VK_NO_PROTOTYPES)
 if (WIN32)
     target_compile_definitions(${NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
