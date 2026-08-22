@@ -346,26 +346,6 @@ void engine_begin_rendering(Engine* engine) {
 	vkCmdSetScissor(engine->command_buffers[engine->frame_index], 0, 1, &scissor);
 }
 
-void engine_update_shader_data(Engine* engine) {
-	ShaderData data{};
-	//printf("check: %f %f\n", engine->cam_n_plane, engine->cam_f_plane);
-	data.projection = glm::perspective(glm::radians(45.0f), (float)engine->window_width / (float)engine->window_height, engine->cam_n_plane, engine->cam_f_plane);
-	data.view = glm::translate(engine->cam_rot_mat, engine->cam_pos);
-	for(auto i = 0; i < 3; i++) {
-		auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, 0.0f, 0.0f);
-		glm::mat4 model = glm::translate(glm::mat4(1.0f), instance_pos);
-		data.model[i] = glm::scale(model, glm::vec3(1.0f));
-	}
-	memcpy(engine->shader_data_buffers[0][engine->frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
-
-	for(auto i = 0; i < 3; i++) {
-		auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, -3.0f, 0.0f);
-		glm::mat4 model = glm::translate(glm::mat4(1.0f), instance_pos);
-		data.model[i] = glm::scale(model, glm::vec3(1.0f));
-	}
-	memcpy(engine->shader_data_buffers[1][engine->frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
-}
-
 void engine_end_rendering_and_present(Engine* engine) {
 	vkCmdEndRendering(engine->command_buffers[engine->frame_index]);
 	VkImageMemoryBarrier2 barrier_present {
@@ -444,14 +424,29 @@ void engine_render_loop(Engine engine) {
 			engine_recreate_swapchain(&engine);
 		}
 
-		engine_update_shader_data(&engine);
-
 		engine_begin_rendering(&engine);
 
-		// Bind shader pipeline, then render v_buffer
+		// Update shader data and draw models
 		// --------------------------
-		engine_draw_model(&engine, 0, 0, 0);
-		engine_draw_model(&engine, 0, 1, 1);
+		ShaderData data{};
+		data.projection = glm::perspective(glm::radians(45.0f), (float)engine.window_width / (float)engine.window_height, engine.cam_n_plane, engine.cam_f_plane);
+		data.view = glm::translate(engine.cam_rot_mat, engine.cam_pos);
+		for(auto i = 0; i < 3; i++) {
+			auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, 0.0f, 0.0f);
+			glm::mat4 model = glm::translate(glm::mat4(1.0f), instance_pos);
+			data.model[i] = glm::scale(model, glm::vec3(1.0f));
+		}
+		memcpy(engine.shader_data_buffers[0][engine.frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
+
+		for(auto i = 0; i < 3; i++) {
+			auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, -3.0f, 0.0f);
+			glm::mat4 model = glm::translate(glm::mat4(1.0f), instance_pos);
+			data.model[i] = glm::scale(model, glm::vec3(1.0f));
+		}
+		memcpy(engine.shader_data_buffers[1][engine.frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
+
+		engine_draw_model(&engine, 0, 0);
+		engine_draw_model(&engine, 0, 1);
 		// -------------------
 
 		engine_end_rendering_and_present(&engine);

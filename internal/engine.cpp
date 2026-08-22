@@ -1068,7 +1068,8 @@ void engine_create_basic_pipelines(Engine* engine, uint32_t* indices, uint32_t i
 	free(pipelines);
 }
 
-void engine_draw_model(Engine* engine, uint32_t m_index, uint32_t p_index, uint32_t s_index) {
+void engine_draw_model(Engine* engine, uint32_t m_index, uint32_t p_index) {
+	uint32_t s_index = p_index;
 	if(engine->is_wireframe) p_index += engine->shader_count;
 	VkDeviceSize v_offset = 0;
 	vkCmdBindPipeline(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipelines[p_index]);
