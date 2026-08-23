@@ -1,10 +1,7 @@
 #include <engine.cpp>
 
 struct ShaderData {
-	glm::mat4 projection;
-	glm::mat4 view;
-	glm::mat4 model[3];
-	glm::vec4 light_pos{ 0.0f, -10.0f, 10.0f, 0.0f };
+	glm::vec3 color{1.0f, 1.0f, 1.0f};
 };
 
 void engine_poll_events(Engine *engine) {
@@ -177,10 +174,12 @@ void engine_poll_scancodes(Engine* engine) {
 	float cam_mv_spd = engine->cam_mv_spd;
 	float cam_rot_spd = engine->cam_rot_spd;
 	float cam_plane_spd = engine->cam_plane_spd;
+	float cam_zoom_spd = engine->cam_zoom_spd;
 	if(key_states[SDL_SCANCODE_LSHIFT] || key_states[SDL_SCANCODE_RSHIFT]) {
 		cam_mv_spd *= 2;
 		cam_rot_spd *= 2;
 		cam_plane_spd *= 2;
+		cam_zoom_spd *= 2;
 	}
 	if(key_states[SDL_SCANCODE_LCTRL] || key_states[SDL_SCANCODE_RCTRL]) {
 		cam_mv_spd *= 0.25;
@@ -246,6 +245,15 @@ void engine_poll_scancodes(Engine* engine) {
 	}
 	if(key_states[SDL_SCANCODE_N]) {
 		engine->cam_n_plane = engine->og_cam_n_plane;
+	}
+	if(key_states[SDL_SCANCODE_T]) {
+		engine->cam_zoom += cam_zoom_spd;
+	}
+	if(key_states[SDL_SCANCODE_Y]) {
+		engine->cam_zoom -= cam_zoom_spd;
+	}
+	if(key_states[SDL_SCANCODE_O]) {
+		engine->cam_zoom = engine->og_cam_zoom;
 	}
 }
 
@@ -429,24 +437,8 @@ void engine_render_loop(Engine engine) {
 		// Update shader data and draw models
 		// --------------------------
 		ShaderData data{};
-		data.projection = glm::perspective(glm::radians(45.0f), (float)engine.window_width / (float)engine.window_height, engine.cam_n_plane, engine.cam_f_plane);
-		data.view = glm::translate(engine.cam_rot_mat, engine.cam_pos);
-		for(auto i = 0; i < 3; i++) {
-			auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, 0.0f, 0.0f);
-			glm::mat4 model = glm::translate(glm::mat4(1.0f), instance_pos);
-			data.model[i] = glm::scale(model, glm::vec3(1.0f));
-		}
 		memcpy(engine.shader_data_buffers[0][engine.frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
-
-		for(auto i = 0; i < 3; i++) {
-			auto instance_pos = glm::vec3((float)(i - 1) * 3.0f, -3.0f, 0.0f);
-			glm::mat4 model = glm::translate(glm::mat4(1.0f), instance_pos);
-			data.model[i] = glm::scale(model, glm::vec3(1.0f));
-		}
-		memcpy(engine.shader_data_buffers[1][engine.frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
-
-		engine_draw_model(&engine, 0, 0, 0, 3);
-		engine_draw_model(&engine, 0, 1, 1, 3);
+		engine_draw_model(&engine, 0, 0, 0, 1);
 		// -------------------
 
 		engine_end_rendering_and_present(&engine);
@@ -460,29 +452,28 @@ int main(int argc, char* argv[]) {
 	std::string scene_filepath = argv[1];
 
 	EngineCreateInfo engineCI{ 
-		.texture_count = 3,
+		.window_width = 720u,
+		.window_height = 720u,
+		.texture_count = 1,
 		.model_count = 1,
-		.shader_count = 2,
-		.shader_data_buffer_count = 2,
+		.shader_count = 1,
+		.shader_data_buffer_count = 1,
 		.wireframe_enabled = true
 	};
 	Engine engine = create_engine(engineCI);
 	
-	engine_load_texture_ktx(&engine, 0, "assets/suzanne0.ktx");
-	engine_load_texture_ktx(&engine, 1, "assets/suzanne1.ktx");
-	engine_load_texture_ktx(&engine, 2, "assets/suzanne2.ktx");
+	engine_load_texture_ktx(&engine, 0, "assets/end_times.ktx");
 	engine_load_texture_descriptors(&engine, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	engine_load_model(&engine, 0, "assets/suzanne.obj");
+	engine_load_model(&engine, 0, "assets/square.obj");
 
 	engine_load_shader(&engine, 0, sizeof(ShaderData), (scene_filepath + "/shaders/shader.slang").c_str());
-	engine_load_shader(&engine, 1, sizeof(ShaderData), (scene_filepath + "/shaders/shader2.slang").c_str());
-	uint32_t sdb_indices[2] = {0, 1};
-	engine_create_shader_data_buffers(&engine, sdb_indices, 2, sizeof(ShaderData));
+	uint32_t sdb_indices[1] = {0};
+	engine_create_shader_data_buffers(&engine, sdb_indices, 1, sizeof(ShaderData));
 
 	engine_create_pipeline_layout(&engine);
-	uint32_t pipeline_indices[2] = {0, 1};
-	engine_create_basic_pipelines(&engine, pipeline_indices, 2);
+	uint32_t pipeline_indices[1] = {0};
+	engine_create_basic_pipelines(&engine, pipeline_indices, 1);
 
 	engine_render_loop(engine);
 	destroy_engine(engine);

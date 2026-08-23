@@ -177,10 +177,12 @@ void engine_poll_scancodes(Engine* engine) {
 	float cam_mv_spd = engine->cam_mv_spd;
 	float cam_rot_spd = engine->cam_rot_spd;
 	float cam_plane_spd = engine->cam_plane_spd;
+	float cam_zoom_spd = engine->cam_zoom_spd;
 	if(key_states[SDL_SCANCODE_LSHIFT] || key_states[SDL_SCANCODE_RSHIFT]) {
 		cam_mv_spd *= 2;
 		cam_rot_spd *= 2;
 		cam_plane_spd *= 2;
+		cam_zoom_spd *= 2;
 	}
 	if(key_states[SDL_SCANCODE_LCTRL] || key_states[SDL_SCANCODE_RCTRL]) {
 		cam_mv_spd *= 0.25;
@@ -246,6 +248,15 @@ void engine_poll_scancodes(Engine* engine) {
 	}
 	if(key_states[SDL_SCANCODE_N]) {
 		engine->cam_n_plane = engine->og_cam_n_plane;
+	}
+	if(key_states[SDL_SCANCODE_T]) {
+		engine->cam_zoom += cam_zoom_spd;
+	}
+	if(key_states[SDL_SCANCODE_Y]) {
+		engine->cam_zoom -= cam_zoom_spd;
+	}
+	if(key_states[SDL_SCANCODE_O]) {
+		engine->cam_zoom = engine->og_cam_zoom;
 	}
 }
 
@@ -429,7 +440,7 @@ void engine_render_loop(Engine engine) {
 		// Update shader data and draw models
 		// --------------------------
 		ShaderData data{};
-		data.projection = glm::perspective(glm::radians(45.0f), (float)engine.window_width / (float)engine.window_height, engine.cam_n_plane, engine.cam_f_plane);
+		data.projection = glm::perspective(glm::radians(engine.cam_zoom), (float)engine.window_width / (float)engine.window_height, engine.cam_n_plane, engine.cam_f_plane);
 		data.view = glm::translate(engine.cam_rot_mat, engine.cam_pos);
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f));
 		data.model = glm::scale(model, glm::vec3(1.0f));

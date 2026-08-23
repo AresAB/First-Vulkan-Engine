@@ -109,10 +109,13 @@ struct Engine {
 	float cam_mv_spd;
 	float cam_rot_spd;
 	float cam_n_plane;
-	float cam_f_plane;
-	float cam_plane_spd;
 	float og_cam_n_plane;
+	float cam_f_plane;
 	float og_cam_f_plane;
+	float cam_plane_spd;
+	float cam_zoom;
+	float cam_zoom_spd;
+	float og_cam_zoom;
 	uint16_t frame_count;
 	bool closing = false;
 	bool update_swapchain = false;
@@ -132,11 +135,13 @@ struct EngineCreateInfo {
 	uint32_t model_count;
 	uint32_t shader_count;
 	uint32_t shader_data_buffer_count;
-	float cam_move_speed = 0.000005f;
-	float cam_rotation_speed = 0.005f;
 	float cam_near_plane = 0.1f;
 	float cam_far_plane = 32.0f;
+	float cam_zoom_angle = 45.0f;
+	float cam_move_speed = 0.000005f;
+	float cam_rotation_speed = 0.005f;
 	float cam_plane_move_speed = 0.05f;
+	float cam_zoom_move_speed = 0.5f;
 	int16_t gpu_index = -1;
 	uint16_t frame_count = 2;
 	bool wireframe_enabled = false;
@@ -160,6 +165,9 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	engine.cam_f_plane = engineCI.cam_far_plane;
 	engine.og_cam_f_plane = engine.cam_f_plane;
 	engine.cam_plane_spd = engineCI.cam_plane_move_speed;
+	engine.cam_zoom = engineCI.cam_zoom_angle;
+	engine.og_cam_zoom = engine.cam_zoom;
+	engine.cam_zoom_spd = engineCI.cam_zoom_move_speed;
 	engine.model_count = engineCI.model_count;
 	engine.shader_count = engineCI.shader_count;
 	engine.shader_data_buffer_count = engineCI.shader_data_buffer_count;
@@ -173,7 +181,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	// declare application and vulkan instance information
 	VkApplicationInfo app_info{
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-		.pApplicationName = "My First Vulkan Engine",
+		.pApplicationName = "Sandy Shores Engine",
 		.apiVersion = VK_API_VERSION_1_3
 	};
 
@@ -340,7 +348,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 
 	// Window Setup
 	// - - - - - - - - - - - - - - - -
-	engine.window = SDL_CreateWindow("First Window", engineCI.window_width, engineCI.window_height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN);
+	engine.window = SDL_CreateWindow("Sandy Shores", engineCI.window_width, engineCI.window_height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN);
 
 	// We interact with the window through its "surface" in Vulkan
 	chk(SDL_Vulkan_CreateSurface(engine.window, engine.instance, NULL, &engine.surface), __LINE__);

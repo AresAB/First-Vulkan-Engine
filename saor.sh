@@ -17,7 +17,7 @@ compile() {
 }
 
 run() {
-	./build/bin/vulkan_engine.exe $scenepath
+	./build/bin/SandyShoresEngine.exe $scenepath
 }
 
 case $1 in
