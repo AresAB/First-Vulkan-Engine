@@ -97,11 +97,12 @@ struct Engine {
 	uint64_t last_time;
 	uint64_t deltatime = 0;
 	VkFormat depth_format = VK_FORMAT_UNDEFINED;
-	int window_width;
+	int32_t window_width;
 	int32_t window_height;
 	uint32_t sc_image_count = 0;
 	uint32_t model_count;
 	uint32_t shader_count;
+	uint32_t shader_data_buffer_count;
 	uint32_t texture_count;
 	uint32_t frame_index = 0;
 	uint32_t image_index = 0;
@@ -125,9 +126,12 @@ struct EngineCreateInfo {
 	VkFormat image_format = VK_FORMAT_B8G8R8A8_SRGB;
 	VkColorSpaceKHR color_space = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 	VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+	uint32_t window_width = 1280;
+	uint32_t window_height = 720;
 	uint32_t texture_count;
 	uint32_t model_count;
 	uint32_t shader_count;
+	uint32_t shader_data_buffer_count;
 	float cam_move_speed = 0.000005f;
 	float cam_rotation_speed = 0.005f;
 	float cam_near_plane = 0.1f;
@@ -158,6 +162,10 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	engine.cam_plane_spd = engineCI.cam_plane_move_speed;
 	engine.model_count = engineCI.model_count;
 	engine.shader_count = engineCI.shader_count;
+	engine.shader_data_buffer_count = engineCI.shader_data_buffer_count;
+	if(engine.shader_data_buffer_count < engine.shader_count) {
+		std::cerr << "ERROR: Less shader data buffers than shaders\n";
+	}
 	engine.wireframe_enabled = engineCI.wireframe_enabled;
 
 	// Create our Vulkan Instance
@@ -332,7 +340,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 
 	// Window Setup
 	// - - - - - - - - - - - - - - - -
-	engine.window = SDL_CreateWindow("First Window", 1280u, 720u, SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN);
+	engine.window = SDL_CreateWindow("First Window", engineCI.window_width, engineCI.window_height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN);
 
 	// We interact with the window through its "surface" in Vulkan
 	chk(SDL_Vulkan_CreateSurface(engine.window, engine.instance, NULL, &engine.surface), __LINE__);
@@ -524,7 +532,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	// - - - - - - - - - - - - - - - -
 
 	engine.models = (Model*)malloc(engine.model_count * sizeof(Model));
-	engine.shader_data_buffers = (ShaderDataBuffer**)malloc(engine.shader_count * sizeof(ShaderDataBuffer*));
+	engine.shader_data_buffers = (ShaderDataBuffer**)malloc(engine.shader_data_buffer_count * sizeof(ShaderDataBuffer*));
 	engine.shader_modules = (VkShaderModule*)malloc(engine.shader_count * sizeof(VkShaderModule));
 	if(engine.wireframe_enabled) {
 		engine.pipelines = (VkPipeline*)malloc(engine.shader_count * sizeof(VkPipeline) * 2);
@@ -830,7 +838,6 @@ void engine_load_model(Engine* engine, uint32_t index, const char* filename) {
 	if(index >= engine->model_count){
 		std::cerr << "ERROR: Loading model at index " << index << " when there are only " << engine->model_count << " model elements\n";
 	}
-	
 	load_model(engine->allocator, engine->models+index, filename);
 }
 
@@ -853,15 +860,15 @@ void engine_create_pipeline_layout(Engine* engine) {
 	chk(vkCreatePipelineLayout(engine->device, &pipeline_layoutCI, nullptr, &engine->pipeline_layout), __LINE__);
 }
 
-void engine_load_shader(Engine* engine, uint32_t index, size_t data_size, const char* filename) {
-	if(index >= engine->shader_count){
-		std::cerr << "ERROR: Loading shader at index " << index << " when there are only " << engine->shader_count << " shader buffer elements\n";
-	}
-
+void engine_create_shader_data_buffers(Engine* engine, uint32_t* indices, uint32_t indices_size, size_t data_size) {
 	// Allocate each shader data buffer and get their device
 	// address so we can access them in shaders without descriptors
-	engine->shader_data_buffers[index] = (ShaderDataBuffer*)malloc(sizeof(ShaderDataBuffer) * engine->frame_count);
-	for(auto i = 0; i < engine->frame_count; i++) {
+	for(auto i = 0; i < indices_size; i++) {
+		if(indices[i] >= engine->shader_data_buffer_count){
+			std::cerr << "ERROR: Creating shader data buffer at index " << indices[i] << " when there are only " << engine->shader_data_buffer_count << " shader data buffer elements\n";
+		}
+
+		engine->shader_data_buffers[indices[i]] = (ShaderDataBuffer*)malloc(sizeof(ShaderDataBuffer) * engine->frame_count);
 		VkBufferCreateInfo shader_data_bufferCI {
 			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 			.size = data_size,
@@ -871,12 +878,20 @@ void engine_load_shader(Engine* engine, uint32_t index, size_t data_size, const 
 			.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
 			.usage = VMA_MEMORY_USAGE_AUTO
 		};
-		chk(vmaCreateBuffer(engine->allocator, &shader_data_bufferCI, &shader_data_buffer_allocCI, &engine->shader_data_buffers[index][i].buffer, &engine->shader_data_buffers[index][i].allocation, &engine->shader_data_buffers[index][i].allocation_info), __LINE__);
-		VkBufferDeviceAddressInfo shader_data_buffer_device_address_info {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-			.buffer = engine->shader_data_buffers[index][i].buffer
-		};
-		engine->shader_data_buffers[index][i].device_address = vkGetBufferDeviceAddress(engine->device, &shader_data_buffer_device_address_info);
+		for(auto j = 0; j < engine->frame_count; j++) {
+			chk(vmaCreateBuffer(engine->allocator, &shader_data_bufferCI, &shader_data_buffer_allocCI, &engine->shader_data_buffers[indices[i]][j].buffer, &engine->shader_data_buffers[indices[i]][j].allocation, &engine->shader_data_buffers[indices[i]][j].allocation_info), __LINE__);
+			VkBufferDeviceAddressInfo shader_data_buffer_device_address_info {
+				.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+				.buffer = engine->shader_data_buffers[indices[i]][j].buffer
+			};
+			engine->shader_data_buffers[indices[i]][j].device_address = vkGetBufferDeviceAddress(engine->device, &shader_data_buffer_device_address_info);
+		}
+	}
+}
+
+void engine_load_shader(Engine* engine, uint32_t index, size_t data_size, const char* filename) {
+	if(index >= engine->shader_count){
+		std::cerr << "ERROR: Loading shader at index " << index << " when there are only " << engine->shader_count << " shader buffer elements\n";
 	}
 
 	// Loading Shaders
@@ -1068,17 +1083,16 @@ void engine_create_basic_pipelines(Engine* engine, uint32_t* indices, uint32_t i
 	free(pipelines);
 }
 
-void engine_draw_model(Engine* engine, uint32_t m_index, uint32_t p_index) {
-	uint32_t s_index = p_index;
-	if(engine->is_wireframe) p_index += engine->shader_count;
+void engine_draw_model(Engine* engine, uint32_t model_index, uint32_t pipeline_index, uint32_t shader_data_buffer_index, uint32_t instance_count) {
+	if(engine->is_wireframe) pipeline_index += engine->shader_count;
 	VkDeviceSize v_offset = 0;
-	vkCmdBindPipeline(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipelines[p_index]);
+	vkCmdBindPipeline(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipelines[pipeline_index]);
 	vkCmdBindDescriptorSets(engine->command_buffers[engine->frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, engine->pipeline_layout, 0, 1, &engine->desc_set, 0, nullptr);
-	vkCmdBindVertexBuffers(engine->command_buffers[engine->frame_index], 0, 1, &engine->models[m_index].v_buffer, &v_offset);
-	for(auto i = 0; i < engine->models[m_index].mesh_count; i++) {
-		vkCmdBindIndexBuffer(engine->command_buffers[engine->frame_index], engine->models[m_index].v_buffer, engine->models[m_index].meshes[i].i_index, VK_INDEX_TYPE_UINT16);
-		vkCmdPushConstants(engine->command_buffers[engine->frame_index], engine->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine->shader_data_buffers[s_index][engine->frame_index].device_address);
-		vkCmdDrawIndexed(engine->command_buffers[engine->frame_index], engine->models[m_index].meshes[i].i_count, 3, 0, 0, 0);
+	vkCmdBindVertexBuffers(engine->command_buffers[engine->frame_index], 0, 1, &engine->models[model_index].v_buffer, &v_offset);
+	for(auto i = 0; i < engine->models[model_index].mesh_count; i++) {
+		vkCmdBindIndexBuffer(engine->command_buffers[engine->frame_index], engine->models[model_index].v_buffer, engine->models[model_index].meshes[i].i_index, VK_INDEX_TYPE_UINT16);
+		vkCmdPushConstants(engine->command_buffers[engine->frame_index], engine->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &engine->shader_data_buffers[shader_data_buffer_index][engine->frame_index].device_address);
+		vkCmdDrawIndexed(engine->command_buffers[engine->frame_index], engine->models[model_index].meshes[i].i_count, instance_count, 0, 0, 0);
 	}
 }
 
@@ -1094,13 +1108,15 @@ void destroy_engine(Engine engine) {
 	free(engine.image_acquired_semaphores);
 	for(auto i = 0; i < engine.shader_count; i++) {
 		vkDestroyShaderModule(engine.device, engine.shader_modules[i], nullptr);
+	}
+	free(engine.shader_modules);
+	for(auto i = 0; i < engine.shader_data_buffer_count; i++) {
 		for(auto j = 0; j < engine.frame_count; j++) {
 			vmaDestroyBuffer(engine.allocator, engine.shader_data_buffers[i][j].buffer, engine.shader_data_buffers[i][j].allocation);
 		}
 		free(engine.shader_data_buffers[i]);
 	}
 	free(engine.shader_data_buffers);
-	free(engine.shader_modules);
 	for(auto i = 0; i < engine.sc_image_count; i++) {
 		vkDestroySemaphore(engine.device, engine.render_complete_semaphores[i], nullptr);
 		vkDestroyImageView(engine.device, engine.sc_image_views[i], nullptr);
