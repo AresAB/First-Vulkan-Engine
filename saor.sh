@@ -17,7 +17,20 @@ compile() {
 }
 
 run() {
-	./build/bin/SandyShoresEngine.exe $scenepath
+	arguments="$scenepath "
+	# iterate through arguments, only add them once r or run is seen
+	flag=0
+	for arg in "$@"
+	do
+		if [ $flag = 0 ]; then
+			if [[ "$arg" = "r" || "$arg" = "run" || "$arg" = "v" || "$arg" = "validate" || "$arg" = "b" || "$arg" = "build" ]]; then
+				flag=1
+			fi
+		else
+			arguments="$arguments $arg"
+		fi
+	done
+	./build/bin/SandyShoresEngine.exe $arguments
 }
 
 case $1 in
@@ -96,7 +109,7 @@ case $1 in
 		compile
 		if [ $? = 0 ]; then
 			export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
-			run
+			run $*
 			export VK_INSTANCE_LAYERS=
 		fi
 		;;
@@ -113,7 +126,7 @@ case $1 in
 			exit 1
 		fi
 		export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
-		run
+		run $*
 		export VK_INSTANCE_LAYERS=
 		;;
 	run | r)
@@ -121,7 +134,7 @@ case $1 in
 			echo "ERROR: Currently loaded scene doesn't exist"
 			exit 1
 		fi
-		run
+		run $*
 		;;
 	process | p)
 		echo "processing"

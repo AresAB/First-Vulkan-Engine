@@ -450,10 +450,24 @@ void engine_render_loop(Engine engine) {
 
 int main(int argc, char* argv[]) {
 	std::string scene_filepath = argv[1];
+	const char* tex = (argc > 2) ? argv[2] : "assets/end_times.ktx";
+	ktxTexture* ktx_texture = nullptr;
+	ktxTexture_CreateFromNamedFile(tex, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
+	uint32_t w_w = ktx_texture->baseWidth;
+	uint32_t w_h = ktx_texture->baseHeight;
+	ktxTexture_Destroy(ktx_texture);
+	while(w_w < 2880 || w_h < 1800) {
+		w_w *= 2;
+		w_h *= 2;
+	}
+	while(w_w > 2880 || w_h > 1800) {
+		w_w /= 2;
+		w_h /= 2;
+	}
 
 	EngineCreateInfo engineCI{ 
-		.window_width = 720u,
-		.window_height = 720u,
+		.window_width = w_w,
+		.window_height = w_h,
 		.texture_count = 1,
 		.model_count = 1,
 		.shader_count = 1,
@@ -462,7 +476,7 @@ int main(int argc, char* argv[]) {
 	};
 	Engine engine = create_engine(engineCI);
 	
-	engine_load_texture_ktx(&engine, 0, "assets/end_times.ktx");
+	engine_load_texture_ktx(&engine, 0, tex);
 	engine_load_texture_descriptors(&engine, VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	engine_load_model(&engine, 0, "assets/square.obj");
