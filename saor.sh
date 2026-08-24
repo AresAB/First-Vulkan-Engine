@@ -20,8 +20,7 @@ run() {
 	arguments="$scenepath "
 	# iterate through arguments, only add them once r or run is seen
 	flag=0
-	for arg in "$@"
-	do
+	for arg in "$@"; do
 		if [ $flag = 0 ]; then
 			if [[ "$arg" = "r" || "$arg" = "run" || "$arg" = "v" || "$arg" = "validate" || "$arg" = "b" || "$arg" = "build" ]]; then
 				flag=1
@@ -35,9 +34,9 @@ run() {
 
 case $1 in
 	-h | --help)
-		echo "Sandy Shores (saor) v0.1"
+		echo "Sandy Shores (saor) v1.0"
 		echo
-		echo "Usage: saor <COMMAND>"
+		echo "Usage: saor.sh <COMMAND>"
 		echo
 		echo "Commands:"
 		echo "  -h | --help:   Shows this page"
@@ -49,7 +48,7 @@ case $1 in
 		echo "  run | r:   Runs currently loaded scene without validation layers"
 		echo "  validate | v:   Runs currently loaded scene with validation layers on"
 		echo "  build | b:   Compiles and validates currently loaded scene"
-		echo "  process | p:   (NOT COMPLETE) Goes through currently loaded scene's results directory and determines whether to process or remove each one based on user input"
+		echo "  process | p [FILE] ... :   Goes through provided KTX files (or untitled ktx files in results if none are provided) and determines whether to process or remove each one based on user input. Uses ktx_viewer, which is just a built scenes/ktx_viewer"
 		;;
 	load | l)
 		if [ "$2" != "" ]; then
@@ -137,7 +136,88 @@ case $1 in
 		run $*
 		;;
 	process | p)
-		echo "processing"
+		if [ "$2" = "" ]; then
+			args=$(ls -tr results/untitled*.ktx)
+		else
+			args=$@
+		fi
+		echo "Processing items:"
+		for arg in $args; do
+			echo "  $arg"
+		done
+		echo
+		for arg in $args; do
+			if [[ $arg = "p" || $arg = "process" ]]; then
+				continue
+			fi
+			if [[ ! -f $arg ]]; then
+				echo "File $arg does not exist."
+				echo ""
+				continue
+			fi
+			echo "Processing file $arg"
+			echo "View file?"
+			while read -p "> " input; do
+				if [[ $input = "y" || $input = "yes" || $input = "n" || $input = "no" || $input = "s" || $input = "skip" ]]; then
+					break
+				fi
+				echo -en "\033[1A\033[2K"
+			done
+			if [[ $input = "s" || $input = "skip" ]]; then
+				echo ""
+				continue
+			fi
+			if [[ $input = "y" || $input = "yes" ]]; then
+				echo "Viewing file, wait for engine to load up."
+				ktx_viewer/bin/SandyShoresEngine.exe scenes/ktx_viewer/shaders/shader.slang $arg &
+			fi
+			echo "Remove file?"
+			while read -p "> " input; do
+				if [[ $input = "y" || $input = "yes" || $input = "n" || $input = "no" || $input = "s" || $input = "skip" ]]; then
+					break
+				fi
+				echo -en "\033[1A\033[2K"
+			done
+			if [[ $input = "s" || $input = "skip" ]]; then
+				echo ""
+				continue
+			fi
+			if [[ $input = "y" || $input = "yes" ]]; then
+				echo "Are you sure you want to delete $arg?"
+				echo "(file will not be recoverable)"
+				while read -p "> " input; do
+					if [[ $input = "y" || $input = "yes" || $input = "n" || $input = "no" || $input = "s" || $input = "skip" ]]; then
+						break
+					fi
+					echo -en "\033[1A\033[2K"
+				done
+				if [[ $input = "s" || $input = "skip" ]]; then
+					echo ""
+					continue
+				fi
+				if [[ $input = "y" || $input = "yes" ]]; then
+					echo "Removing $arg"
+					echo ""
+					rm $arg
+					continue
+				fi
+			fi
+			echo "Rename screenshot (don't include filetype)"
+			while read -p "> " input; do
+				path="results/$input"
+				ktx_viewer/ktx.exe extract $arg $path.png
+				if [ $? = 0 ]; then
+					break
+				fi
+				echo -en "\033[1A\033[2K"
+				echo "Put in valid name"
+			done
+			mv $arg $path.ktx
+			echo "Write a note about the screenshot" > $path.txt
+			nvim $path.txt
+			echo "Finished with processing $arg -> $path.ktx"
+			echo ""
+		done
 		;;
 	*)
 		echo "ERROR: No first argument \"$1\" known to program"

@@ -185,6 +185,7 @@ void engine_poll_scancodes(Engine* engine) {
 		cam_mv_spd *= 0.25;
 		cam_rot_spd *= 0.25;
 		cam_plane_spd *= 0.25;
+		cam_zoom_spd *= 0.25;
 	}
 	if(key_states[SDL_SCANCODE_A]) {
 		engine->cam_pos += cam_mv_spd * engine->deltatime * glm::vec3(1.0f, 0.0f, 0.0f) * glm::mat3(engine->cam_rot_mat);

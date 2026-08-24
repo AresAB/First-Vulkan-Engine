@@ -145,6 +145,7 @@ struct EngineCreateInfo {
 	int16_t gpu_index = -1;
 	uint16_t frame_count = 2;
 	bool wireframe_enabled = false;
+	bool is_silent = false;
 };
 
 Engine create_engine(EngineCreateInfo engineCI) {
@@ -217,23 +218,23 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	// Override if user asks for a specific GPU via command line
 	uint32_t physical_device_index = physical_device_count;
 
-	std::cout << "GPU(s)\n------------------------\n";
+	if(!engineCI.is_silent) std::cout << "GPU(s)\n------------------------\n";
 	for(uint32_t i = 0; i < physical_device_count; i++) {
 		VkPhysicalDeviceProperties2 physical_device_prop{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 		vkGetPhysicalDeviceProperties2(physical_devices[i], &physical_device_prop);
-		std::cout << "  |- (" << i << ") " << physical_device_prop.properties.deviceName << "\n";
+		if(!engineCI.is_silent) std::cout << "  |- (" << i << ") " << physical_device_prop.properties.deviceName << "\n";
 		if(VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) >= 1 && (VK_API_VERSION_MINOR(physical_device_prop.properties.apiVersion) >= 3 || VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) > 1) && (physical_device_prop.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU || i < physical_device_index)) {
 			physical_device_index = i;
 		}
 	}
-	std::cout << "------------------------\n";
+	if(!engineCI.is_silent) std::cout << "------------------------\n";
 
 	if(engineCI.gpu_index != -1) {
 		if(engineCI.gpu_index < physical_device_count) {
 			physical_device_index = engineCI.gpu_index;
 		}
 		else { 
-			std::cout << "ERROR: Input GPU index too high, defaulting back to automatic selection.\n";
+			if(!engineCI.is_silent) std::cout << "ERROR: Input GPU index too high, defaulting back to automatic selection.\n";
 		}
 	}
 	else if(physical_device_index == physical_device_count) {
@@ -245,7 +246,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	VkPhysicalDeviceProperties2 physical_device_prop{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 	vkGetPhysicalDeviceProperties2(engine.physical_device, &physical_device_prop);
 
-	std::cout << "Selected GPU: (" << physical_device_index << ") " << physical_device_prop.properties.deviceName << "\nSupports up to Vulkan API " << VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) << "." << VK_API_VERSION_MINOR(physical_device_prop.properties.apiVersion) << "\nVulkan Physical Device Type " << physical_device_prop.properties.deviceType << "\n\n";
+	if(!engineCI.is_silent) std::cout << "Selected GPU: (" << physical_device_index << ") " << physical_device_prop.properties.deviceName << "\nSupports up to Vulkan API " << VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) << "." << VK_API_VERSION_MINOR(physical_device_prop.properties.apiVersion) << "\nVulkan Physical Device Type " << physical_device_prop.properties.deviceType << "\n\n";
 	if(VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) < 1 || (VK_API_VERSION_MAJOR(physical_device_prop.properties.apiVersion) == 1 && VK_API_VERSION_MINOR(physical_device_prop.properties.apiVersion) < 3)) std::cerr << "ERROR: selected GPU does not support up to Vulkan API 1.3\n";
 	// - - - - - - - - - - - - - - - -
 	
@@ -897,7 +898,7 @@ void engine_create_shader_data_buffers(Engine* engine, uint32_t* indices, uint32
 	}
 }
 
-void engine_load_shader(Engine* engine, uint32_t index, size_t data_size, const char* filename) {
+void engine_load_shader(Engine* engine, uint32_t index, const char* filename) {
 	if(index >= engine->shader_count){
 		std::cerr << "ERROR: Loading shader at index " << index << " when there are only " << engine->shader_count << " shader buffer elements\n";
 	}
