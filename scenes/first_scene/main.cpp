@@ -475,8 +475,8 @@ int main(int argc, char* argv[]) {
 
 	engine_load_model(&engine, 0, "assets/suzanne.obj");
 
-	engine_load_shader(&engine, 0, sizeof(ShaderData), (scene_filepath + "/shaders/shader.slang").c_str());
-	engine_load_shader(&engine, 1, sizeof(ShaderData), (scene_filepath + "/shaders/shader2.slang").c_str());
+	engine_load_shader(&engine, 0, (scene_filepath + "/shaders/shader.slang").c_str());
+	engine_load_shader(&engine, 1, (scene_filepath + "/shaders/shader2.slang").c_str());
 	uint32_t sdb_indices[2] = {0, 1};
 	engine_create_shader_data_buffers(&engine, sdb_indices, 2, sizeof(ShaderData));
 

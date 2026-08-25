@@ -34,7 +34,7 @@ run() {
 
 case $1 in
 	-h | --help)
-		echo "Sandy Shores (saor) v1.0"
+		echo "Sandy Shores (saor) v1.1"
 		echo
 		echo "Usage: saor.sh <COMMAND>"
 		echo
@@ -138,6 +138,9 @@ case $1 in
 	process | p)
 		if [ "$2" = "" ]; then
 			args=$(ls -tr results/untitled*.ktx)
+			if [[ $? != 0 ]]; then
+				echo "No screenshots needed to be processed"
+			fi
 		else
 			args=$@
 		fi
@@ -205,6 +208,19 @@ case $1 in
 			echo "Rename screenshot (don't include filetype)"
 			while read -p "> " input; do
 				path="results/$input"
+				if [[ -f "$path.ktx" || -f "$path.png" ]]; then
+					echo "File already exists, do you wish to overwrite it?"
+					while read -p "> " input; do
+						if [[ $input = "y" || $input = "yes" || $input = "n" || $input = "no" || $input = "s" || $input = "skip" ]]; then
+							break
+						fi
+						echo -en "\033[1A\033[2K"
+					done
+					if [[ $input = "n" || $input = "no" || $input = "s" || $input = "skip" ]]; then
+						echo "Rename screenshot (don't include filetype)"
+						continue
+					fi
+				fi
 				ktx_viewer/ktx.exe extract $arg $path.png
 				if [ $? = 0 ]; then
 					break
@@ -213,8 +229,16 @@ case $1 in
 				echo "Put in valid name"
 			done
 			mv $arg $path.ktx
-			echo "Write a note about the screenshot" > $path.txt
-			nvim $path.txt
+			echo "Do you want to write a note about the screenshot?"
+			while read -p "> " input; do
+				if [[ $input = "y" || $input = "yes" || $input = "n" || $input = "no" || $input = "s" || $input = "skip" ]]; then
+					break
+				fi
+				echo -en "\033[1A\033[2K"
+			done
+			if [[ $input = "y" || $input = "yes" ]]; then
+				nvim $path.txt
+			fi
 			echo "Finished with processing $arg -> $path.ktx"
 			echo ""
 		done
