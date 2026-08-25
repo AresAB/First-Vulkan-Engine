@@ -34,7 +34,7 @@ run() {
 
 case $1 in
 	-h | --help)
-		echo "Sandy Shores (saor) v1.1"
+		echo "Sandy Shores (saor) v1.2"
 		echo
 		echo "Usage: saor.sh <COMMAND>"
 		echo
@@ -68,10 +68,6 @@ case $1 in
 		fi
 		;;
 	create | c)
-		if [ $no_scenepath = 0 ]; then
-			echo "ERROR: Currently loaded scene doesn't exist"
-			exit 1
-		fi
 		if [ "$3" = "" ]; then
 			echo "ERROR: No template provided to create new project from"
 			exit 1

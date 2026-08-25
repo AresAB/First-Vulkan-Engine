@@ -97,6 +97,7 @@ struct Engine {
 	uint64_t last_time;
 	uint64_t deltatime = 0;
 	VkFormat depth_format = VK_FORMAT_UNDEFINED;
+	VkCullModeFlags cull_mode;
 	int32_t window_width;
 	int32_t window_height;
 	uint32_t sc_image_count = 0;
@@ -135,6 +136,7 @@ struct EngineCreateInfo {
 	uint32_t model_count;
 	uint32_t shader_count;
 	uint32_t shader_data_buffer_count;
+	VkCullModeFlags cull_mode_flags = VK_CULL_MODE_NONE;
 	float cam_near_plane = 0.1f;
 	float cam_far_plane = 32.0f;
 	float cam_zoom_angle = 45.0f;
@@ -155,6 +157,7 @@ Engine create_engine(EngineCreateInfo engineCI) {
 
 	Engine engine{};
 	engine.frame_count = engineCI.frame_count;
+	engine.cull_mode = engineCI.cull_mode_flags;
 	engine.og_cam_pos = engineCI.cam_starting_position;
 	engine.cam_pos = engine.og_cam_pos;
 	engine.og_cam_rot_mat = engineCI.cam_starting_rotation_matrix;
@@ -1029,6 +1032,7 @@ void engine_create_basic_pipelines(Engine* engine, uint32_t* indices, uint32_t i
 	// Set to default (we aren't really using them).
 	VkPipelineRasterizationStateCreateInfo rasterization_stateCI {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		.cullMode = engine->cull_mode,
 		.lineWidth = 1.0f
 	};
 	// Only used if wireframe is enabled
