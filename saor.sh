@@ -34,7 +34,7 @@ run() {
 
 case $1 in
 	-h | --help)
-		echo "Sandy Shores (saor) v1.2"
+		echo "Sandy Shores (saor) v1.3"
 		echo
 		echo "Usage: saor.sh <COMMAND>"
 		echo
@@ -49,6 +49,7 @@ case $1 in
 		echo "  validate | v:   Runs currently loaded scene with validation layers on"
 		echo "  build | b:   Compiles and validates currently loaded scene"
 		echo "  process | p [FILE] ... :   Goes through provided KTX files (or untitled ktx files in results if none are provided) and determines whether to process or remove each one based on user input. Uses ktx_viewer, which is just a built scenes/ktx_viewer"
+		echo "  ktx | k [FILE1] [FILE2]:   Converts [FILE1] to ktx and puts it into the assets directory as [FILE2]"
 		;;
 	load | l)
 		if [ "$2" != "" ]; then
@@ -238,6 +239,13 @@ case $1 in
 			echo "Finished with processing $arg -> $path.ktx"
 			echo ""
 		done
+		;;
+	ktx | k)
+		if [[ ! -f $2 ]]; then
+			echo "ERROR: Input file does not exist"
+			exit 1
+		fi
+		ktx_viewer/ktx.exe create --format=R8G8B8A8_SRGB $2 $3
 		;;
 	*)
 		echo "ERROR: No first argument \"$1\" known to program"
