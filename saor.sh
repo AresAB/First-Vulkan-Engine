@@ -34,13 +34,14 @@ run() {
 
 case $1 in
 	-h | --help)
-		echo "Sandy Shores (saor) v1.3"
+		echo "Sandy Shores (saor) v1.4"
 		echo
 		echo "Usage: saor.sh <COMMAND>"
 		echo
 		echo "Commands:"
 		echo "  -h | --help:   Shows this page"
 		echo "  load | l [DIR]:   Loads [DIR] in as current scene that other commands will interact with. If no [DIR] is provided, simply outputs currently loaded scene"
+		echo "  edit | e:   Opens up nvim at currently loaded scene"
 		echo "  create | c [DIR1] [DIR2]:   Copies [DIR2] into a new [DIR1]"
 		echo "  duplicate | d [DIR]:   Copies currently loaded scene into a new [DIR]"
 		echo "  switch | s [DIR]:   Duplicates and loads [DIR]"
@@ -67,6 +68,13 @@ case $1 in
 				exit 1
 			fi
 		fi
+		;;
+	edit | e)
+		if [ $no_scenepath = 0 ]; then
+			echo "ERROR: Currently loaded scene doesn't exist"
+			exit 1
+		fi
+		nvim $scenepath
 		;;
 	create | c)
 		if [ "$3" = "" ]; then
