@@ -155,6 +155,19 @@ Engine create_engine(EngineCreateInfo engineCI) {
 	chk(SDL_Vulkan_LoadLibrary(NULL), __LINE__);
 	chk(volkInitialize(), __LINE__);
 
+	if(engineCI.is_silent) {
+		std::cout << " _____________________________________\n";
+		std::cout << "|  ____   __   __ _  ____  _  _       |\n";
+		std::cout << "| / ___) / _\\ (  ( \\(    \\( \\/ )      |\n";
+		std::cout << "| \\___ \\/    \\/    / ) D ( )  /       |\n";
+		std::cout << "| (____/\\_/\\_/\\_)__)(____/(__/        |\n";
+		std::cout << "|  ____  _  _   __  ____  ____  ____  |\n";
+		std::cout << "| / ___)/ )( \\ /  \\(  _ \\(  __)/ ___) |\n";
+		std::cout << "| \\___ \\) __ ((  O ))   / ) _) \\___ \\ |\n";
+		std::cout << "| (____/\\_)(_/ \\__/(__\\_)(____)(____/ |\n";
+		std::cout << "|_____________________________________|\n\n";
+	}
+
 	Engine engine{};
 	engine.frame_count = engineCI.frame_count;
 	engine.cull_mode = engineCI.cull_mode_flags;
@@ -614,6 +627,9 @@ void engine_load_texture_ktx(Engine* engine, uint32_t index, const char* filenam
 	if(index >= engine->texture_count){
 		std::cerr << "ERROR: Loading texture at index " << index << " when there are only " << engine->texture_count << " texture elements\n";
 	}
+	if(!std::filesystem::exists(std::filesystem::path(filename))) {
+		std::cerr << "ERROR: Texture file " << filename << " does not exist\n";
+	}
 
 	ktxTexture* ktx_texture = nullptr;
 	ktxTexture_CreateFromNamedFile(filename, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
@@ -850,6 +866,9 @@ void engine_load_model(Engine* engine, uint32_t index, const char* filename) {
 	if(index >= engine->model_count){
 		std::cerr << "ERROR: Loading model at index " << index << " when there are only " << engine->model_count << " model elements\n";
 	}
+	if(!std::filesystem::exists(std::filesystem::path(filename))) {
+		std::cerr << "ERROR: Model file " << filename << " does not exist\n";
+	}
 	load_model(engine->allocator, engine->models+index, filename);
 }
 
@@ -904,6 +923,9 @@ void engine_create_shader_data_buffers(Engine* engine, uint32_t* indices, uint32
 void engine_load_shader(Engine* engine, uint32_t index, const char* filename) {
 	if(index >= engine->shader_count){
 		std::cerr << "ERROR: Loading shader at index " << index << " when there are only " << engine->shader_count << " shader buffer elements\n";
+	}
+	if(!std::filesystem::exists(std::filesystem::path(filename))) {
+		std::cerr << "ERROR: Shader file " << filename << " does not exist\n";
 	}
 
 	// Loading Shaders

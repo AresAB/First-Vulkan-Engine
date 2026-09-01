@@ -452,6 +452,9 @@ void engine_render_loop(Engine engine) {
 int main(int argc, char* argv[]) {
 	std::string scene_filepath = argv[1];
 	const char* tex = (argc > 2) ? argv[2] : "assets/end_times.ktx";
+	if(!std::filesystem::exists(std::filesystem::path(tex))) {
+		std::cerr << "ERROR: Texture file " << tex << " does not exist\n";
+	}
 	ktxTexture* ktx_texture = nullptr;
 	ktxTexture_CreateFromNamedFile(tex, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
 	uint32_t w_w = ktx_texture->baseWidth;
