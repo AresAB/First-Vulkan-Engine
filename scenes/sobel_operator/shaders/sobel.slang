@@ -33,28 +33,25 @@ static const float3x3 sob_h = float3x3(-1, 0, 1,
 [shader("fragment")]
 float4 main(VSOutput input) {
     Sampler2D tex = textures[NonUniformResourceIndex(0)];
-    float3 v_sum = float3(0);
-    float3 h_sum = float3(0);
+    float3 color = tex.Sample(input.uv).rgb;
+    float v_sum = 0;
+    float h_sum = 0;
     float2 tex_dim;
     tex.GetDimensions(tex_dim.x, tex_dim.y);
     float2 tex_size = float2(1.0f/tex_dim.x, 1.0f/tex_dim.y);
     for(int i = 0; i < 3; i++) {
     	for(int j = 0; j < 3; j++) {
-    		float3 color = tex.Sample(float2(input.uv.x + (i - 1) * tex_size.x, input.uv.y + (j - 1) * tex_size.y)).rgb;
-		float sob = sob_v[i][j];
-		v_sum += color * sob;
-		h_sum += color * sob;
+    		float color = dot(tex.Sample(float2(input.uv.x + (i - 1) * tex_size.x, input.uv.y + (j - 1) * tex_size.y)).rgb, float3(0.299, 0.587, 0.114));
+		v_sum += color * sob_v[i][j];
+		h_sum += color * sob_h[i][j];
 	}
     }
     
     // magnitude approx: float mag = v_sum + h_sum;
     // magnitude accurate: float mag = sqrt(v_sum * v_sum + h_sum * h_sum);
     // angle: atan2(h_sum / x_sum)
-    float3 mag;
-    mag.r = sqrt(v_sum.r * v_sum.r + h_sum.r * h_sum.r);
-    mag.g = sqrt(v_sum.g * v_sum.g + h_sum.g * h_sum.g);
-    mag.b = sqrt(v_sum.b * v_sum.b + h_sum.b * h_sum.b);
-    return float4(mag.r, mag.g, mag.b, 1.0f);
+    float mag = sqrt(v_sum * v_sum + h_sum * h_sum);
+    return float4(mag, mag, mag, 1.0f);
 
     // might be fun to sobel over each color channel and make something from that
 }
