@@ -39,18 +39,7 @@ void engine_poll_events(Engine *engine) {
 			VmaAllocationInfo trans_image_alloc_info;
 			chk(vmaCreateBuffer(engine->allocator, &trans_image_bufferCI, &trans_image_allocCI, &trans_image_buffer, &trans_image_allocation, &trans_image_alloc_info), __LINE__);
 
-			VkCommandBuffer scrn_shot_cb;
-			VkCommandBufferAllocateInfo scrn_shot_cbAI {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-				.commandPool = engine->command_pool,
-				.commandBufferCount = 1
-			};
-			chk(vkAllocateCommandBuffers(engine->device, &scrn_shot_cbAI, &scrn_shot_cb), __LINE__);
-			VkCommandBufferBeginInfo scrn_shot_cbBI {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-				.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-			};
-			chk(vkBeginCommandBuffer(scrn_shot_cb, &scrn_shot_cbBI), __LINE__);
+			VkCommandBuffer scrn_shot_cb = beginOneTimeCommand(engine, __LINE__);
 			VkImageMemoryBarrier2 mb_transfer {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 				.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,

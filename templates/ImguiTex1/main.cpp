@@ -1,16 +1,13 @@
-#include <engine.cpp>
+#include <imgui_engine.cpp>
 
 struct ShaderData {
-	glm::mat4 projection;
-	glm::mat4 view;
-	glm::mat4 model;
-	glm::vec4 light_pos{ 0.0f, -10.0f, 10.0f, 0.0f };
+	glm::vec3 color{1.0f, 1.0f, 1.0f};
 };
 
 void engine_poll_events(Engine *engine) {
 	SDL_Event event;
 	while(SDL_PollEvent(&event)) {
-		// Window Close Button
+			// Window Close Button
 		if(event.type == SDL_EVENT_QUIT) {
 			engine->closing = true;
 			break;
@@ -19,9 +16,14 @@ void engine_poll_events(Engine *engine) {
 		if(event.type == SDL_EVENT_WINDOW_RESIZED) {
 			engine->update_swapchain = true;
 		}
+		// Imgui event processing
+		ImGui_ImplSDL3_ProcessEvent(&event);
 		// Wireframe Mode Keybind
 		if(engine->wireframe_enabled && event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_E) {
 			engine->is_wireframe = !engine->is_wireframe;
+		}
+		if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_Z) {
+			engine->imgui_enabled = !engine->imgui_enabled;
 		}
 		// Screenshot Keybind
 		if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_R) {
@@ -42,18 +44,7 @@ void engine_poll_events(Engine *engine) {
 			VmaAllocationInfo trans_image_alloc_info;
 			chk(vmaCreateBuffer(engine->allocator, &trans_image_bufferCI, &trans_image_allocCI, &trans_image_buffer, &trans_image_allocation, &trans_image_alloc_info), __LINE__);
 
-			VkCommandBuffer scrn_shot_cb;
-			VkCommandBufferAllocateInfo scrn_shot_cbAI {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-				.commandPool = engine->command_pool,
-				.commandBufferCount = 1
-			};
-			chk(vkAllocateCommandBuffers(engine->device, &scrn_shot_cbAI, &scrn_shot_cb), __LINE__);
-			VkCommandBufferBeginInfo scrn_shot_cbBI {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-				.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-			};
-			chk(vkBeginCommandBuffer(scrn_shot_cb, &scrn_shot_cbBI), __LINE__);
+			VkCommandBuffer scrn_shot_cb = beginOneTimeCommand(engine, __LINE__);
 			VkImageMemoryBarrier2 mb_transfer {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 				.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -435,25 +426,22 @@ void engine_render_loop(Engine engine) {
 		if(engine.update_swapchain) {
 			engine_recreate_swapchain(&engine);
 		}
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplSDL3_NewFrame();
+		ImGui::NewFrame();
+		ImGui::ShowDemoWindow();
+		ImGui::Render();
 
 		engine_begin_rendering(&engine);
 
 		// Update shader data and draw models
-		// --------------------------
+		// -----------------------engine.command
 		ShaderData data{};
-		data.projection = glm::perspective(glm::radians(engine.cam_zoom), (float)engine.window_width / (float)engine.window_height, engine.cam_n_plane, engine.cam_f_plane);
-		data.view = glm::translate(engine.cam_rot_mat, engine.cam_pos);
-		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f));
-		data.model = glm::scale(model, glm::vec3(1.0f));
 		memcpy(engine.shader_data_buffers[0][engine.frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
 		engine_draw_model(&engine, 0, 0, 0, 1);
-
-		model = glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.0f, 0.0f));
-		data.model = glm::scale(model, glm::vec3(1.0f));
-		memcpy(engine.shader_data_buffers[1][engine.frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
-		engine_draw_model(&engine, 0, 0, 1, 1);
 		// -------------------
 
+		if(engine.imgui_enabled) ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), engine.command_buffers[engine.frame_index], VK_NULL_HANDLE);
 		engine_end_rendering_and_present(&engine);
 
 		// Poll events part 2
@@ -463,31 +451,53 @@ void engine_render_loop(Engine engine) {
 
 int main(int argc, char* argv[]) {
 	std::string scene_filepath = argv[1];
+	const char* tex = (argc > 2) ? argv[2] : "assets/end_times.ktx";
+	if(!std::filesystem::exists(std::filesystem::path(tex))) {
+		std::cerr << "ERROR: Texture file " << tex << " does not exist\n";
+	}
+	ktxTexture* ktx_texture = nullptr;
+	ktxTexture_CreateFromNamedFile(tex, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
+	uint32_t w_w = ktx_texture->baseWidth;
+	uint32_t w_h = ktx_texture->baseHeight;
+	ktxTexture_Destroy(ktx_texture);
+	while(w_w < 2880 || w_h < 1800) {
+		w_w *= 2;
+		w_h *= 2;
+	}
+	while(w_w > 2880 || w_h > 1800) {
+		w_w /= 2;
+		w_h /= 2;
+	}
 
 	EngineCreateInfo engineCI{ 
+		.window_width = w_w,
+		.window_height = w_h,
 		.texture_count = 1,
 		.model_count = 1,
 		.shader_count = 1,
-		.shader_data_buffer_count = 2,
+		.shader_data_buffer_count = 1,
 		.cull_mode_flags = VK_CULL_MODE_BACK_BIT,
 		.wireframe_enabled = true
 	};
 	Engine engine = create_engine(engineCI);
+	VkDescriptorPool imgui = init_imgui(&engine);
 	
-	engine_load_texture_ktx(&engine, 0, "assets/suzanne0.ktx");
+	engine_load_texture_ktx(&engine, 0, tex);
 	engine_load_texture_descriptors(&engine, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	engine_load_model(&engine, 0, "assets/suzanne.obj");
+	engine_load_model(&engine, 0, "assets/square.obj");
 
 	engine_load_shader(&engine, 0, (scene_filepath + "/shaders/shader.slang").c_str());
-	uint32_t sdb_indices[2] = {0,1};
-	engine_create_shader_data_buffers(&engine, sdb_indices, 2, sizeof(ShaderData));
+	uint32_t sdb_indices[1] = {0};
+	engine_create_shader_data_buffers(&engine, sdb_indices, 1, sizeof(ShaderData));
 
 	engine_create_pipeline_layout(&engine);
 	uint32_t pipeline_indices[1] = {0};
 	engine_create_basic_pipelines(&engine, pipeline_indices, 1);
 
 	engine_render_loop(engine);
+
+	destroy_imgui(&engine, imgui);
 	destroy_engine(engine);
 }
 

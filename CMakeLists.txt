@@ -19,6 +19,7 @@ include_directories(SYSTEM $ENV{VULKAN_SDK}/include)
 include_directories(SYSTEM internal)
 include_directories(SYSTEM ${SCENE}/include)
 # These are not part of the SDK
+include_directories(SYSTEM external)
 set(KTX_GIT_VERSION_FULL "v4.3.2")
 add_subdirectory(external/ktx)
 

@@ -122,6 +122,7 @@ struct Engine {
 	bool update_swapchain = false;
 	bool wireframe_enabled;
 	bool is_wireframe = false;
+	bool imgui_enabled = false;
 };
 
 struct EngineCreateInfo {
@@ -623,6 +624,47 @@ void engine_recreate_swapchain(Engine* engine) {
 	chk(vkCreateImageView(engine->device, &viewCI, nullptr, &engine->depth_image_view), __LINE__);
 }
 
+VkCommandBuffer beginOneTimeCommand(Engine* engine, int line) {
+	VkCommandBuffer cb;
+	VkCommandBufferAllocateInfo cbAI {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		.commandPool = engine->command_pool,
+		.commandBufferCount = 1
+	};
+	chk(vkAllocateCommandBuffers(engine->device, &cbAI, &cb), __LINE__);
+	VkCommandBufferBeginInfo cbBI {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	chk(vkBeginCommandBuffer(cb, &cbBI), line);
+	return cb;
+}
+
+VkFence submitOneTimeCommand(Engine* engine, VkCommandBuffer cb, int line) {
+	chk(vkEndCommandBuffer(cb), __LINE__);
+	VkSubmitInfo one_timeSI {
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.commandBufferCount = 1,
+		.pCommandBuffers = &cb
+	};
+	VkFenceCreateInfo fenceCI {
+		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+	};
+	VkFence fence;
+	chk(vkCreateFence(engine->device, &fenceCI, nullptr, &fence), __LINE__);
+	chk(vkQueueSubmit(engine->queue, 1, &one_timeSI, fence), line);
+	return fence;
+}
+
+void waitOneTimeCommand(Engine* engine, VkFence fence, int line) {
+	chk(vkWaitForFences(engine->device, 1, &fence, VK_TRUE, UINT64_MAX), line);
+	vkDestroyFence(engine->device, fence, nullptr);
+}
+
+void endOneTimeCommand(Engine* engine, VkCommandBuffer cb, int line) {
+	waitOneTimeCommand(engine, submitOneTimeCommand(engine, cb, line), line);
+}
+
 void engine_load_texture_ktx(Engine* engine, uint32_t index, const char* filename){ 
 	if(index >= engine->texture_count){
 		std::cerr << "ERROR: Loading texture at index " << index << " when there are only " << engine->texture_count << " texture elements\n";
@@ -689,18 +731,6 @@ void engine_load_texture_ktx(Engine* engine, uint32_t index, const char* filenam
 	// Now we need to make our command buffers in order to
 	// do the copy commands, and we'll want a fence to know
 	// when it's done.
-	VkFenceCreateInfo temp_fenceCI {
-		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
-	};
-	VkFence temp_fence;
-	chk(vkCreateFence(engine->device, &temp_fenceCI, nullptr, &temp_fence), __LINE__);
-	VkCommandBuffer temp_cb;
-	VkCommandBufferAllocateInfo temp_cbAI {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-		.commandPool = engine->command_pool,
-		.commandBufferCount = 1
-	};
-	chk(vkAllocateCommandBuffers(engine->device, &temp_cbAI, &temp_cb), __LINE__);
 	// Now we need to record our copy command.
 	// The layout (tiling) of the image in memory determines
 	// what it can do, so we use vkCmdPipelineBarrier2 to
@@ -708,11 +738,7 @@ void engine_load_texture_ktx(Engine* engine, uint32_t index, const char* filenam
 	// then copy all mip levels to our temp buffer via
 	// vkCmdCopyBufferToImage, and then convert layout to
 	// make mip levels readable from shaders.
-	VkCommandBufferBeginInfo temp_cbBI {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-	};
-	chk(vkBeginCommandBuffer(temp_cb, &temp_cbBI), __LINE__);
+	VkCommandBuffer temp_cb = beginOneTimeCommand(engine, __LINE__);
 	VkImageMemoryBarrier2 barrier_tex_transfer {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 		.srcStageMask = VK_PIPELINE_STAGE_2_NONE,
@@ -770,16 +796,8 @@ void engine_load_texture_ktx(Engine* engine, uint32_t index, const char* filenam
 	};
 	barrier_tex_info.pImageMemoryBarriers = &barrier_tex_read;
 	vkCmdPipelineBarrier2(temp_cb, &barrier_tex_info);
-	chk(vkEndCommandBuffer(temp_cb), __LINE__);
-	VkSubmitInfo one_timeSI {
-		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.commandBufferCount = 1,
-		.pCommandBuffers = &temp_cb
-	};
-	chk(vkQueueSubmit(engine->queue, 1, &one_timeSI, temp_fence), __LINE__);
-	chk(vkWaitForFences(engine->device, 1, &temp_fence, VK_TRUE, UINT64_MAX), __LINE__);
+	endOneTimeCommand(engine, temp_cb, __LINE__);
 	free(copy_regions);
-	vkDestroyFence(engine->device, temp_fence, nullptr);
 	vmaDestroyBuffer(engine->allocator, temp_image_buffer, temp_image_allocation);
 	// Wrap it up by defining the shader's sample behavior
 	VkSamplerCreateInfo samplerCI {
