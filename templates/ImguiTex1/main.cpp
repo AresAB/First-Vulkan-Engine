@@ -2,6 +2,7 @@
 
 struct ShaderData {
 	glm::vec3 color{1.0f, 1.0f, 1.0f};
+	float shader_interp_value = 0.0f;
 };
 
 void engine_poll_events(Engine *engine) {
@@ -414,6 +415,11 @@ void engine_end_rendering_and_present(Engine* engine) {
 
 void engine_render_loop(Engine engine) {
 	engine.last_time = SDL_GetTicks();
+	ImGuiIO& imgui_io = ImGui::GetIO();
+	ShaderData data{};
+	bool foo = false;
+	uint32_t counter = 0;
+
 	while(!engine.closing) {
 		// Wait on fence, then acquire next image
 		chk(vkWaitForFences(engine.device, 1, &engine.fences[engine.frame_index], true, UINT64_MAX), __LINE__);
@@ -429,14 +435,23 @@ void engine_render_loop(Engine engine) {
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplSDL3_NewFrame();
 		ImGui::NewFrame();
-		ImGui::ShowDemoWindow();
+
+		ImGui::Begin("ImGui Window");
+		ImGui::Text("Average %.3f ms/frame (%.1f FPS)", 1000.0f / imgui_io.Framerate, imgui_io.Framerate);
+		ImGui::SliderFloat("Shader Strength", &data.shader_interp_value, 0.0f, 1.0f);
+		ImGui::ColorEdit3("Shader color", (float*)&data.color);
+		ImGui::Checkbox("Random Bool", &foo);
+		if(ImGui::Button("Button")) counter++;
+		ImGui::SameLine();
+		ImGui::Text("Counter = %u", counter);
+		ImGui::End();
+
 		ImGui::Render();
 
 		engine_begin_rendering(&engine);
 
 		// Update shader data and draw models
 		// -----------------------engine.command
-		ShaderData data{};
 		memcpy(engine.shader_data_buffers[0][engine.frame_index].allocation_info.pMappedData, &data, sizeof(ShaderData));
 		engine_draw_model(&engine, 0, 0, 0, 1);
 		// -------------------
