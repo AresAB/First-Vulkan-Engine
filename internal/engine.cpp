@@ -120,6 +120,7 @@ struct Engine {
 	uint16_t frame_count;
 	bool closing = false;
 	bool update_swapchain = false;
+	bool taking_screenshot = false;
 	bool wireframe_enabled;
 	bool is_wireframe = false;
 	bool imgui_enabled = false;

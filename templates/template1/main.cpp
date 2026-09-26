@@ -25,133 +25,10 @@ void engine_poll_events(Engine *engine) {
 		}
 		// Screenshot Keybind
 		if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_R) {
-			VkMemoryRequirements image_mem_reqs;
-			vkGetImageMemoryRequirements(engine->device, engine->sc_images[engine->image_index], &image_mem_reqs);
-
-			VkBuffer trans_image_buffer;
-			VmaAllocation trans_image_allocation;
-			VkBufferCreateInfo trans_image_bufferCI {
-				.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-				.size = image_mem_reqs.size,
-				.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT
-			};
-			VmaAllocationCreateInfo trans_image_allocCI {
-				.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
-				.usage = VMA_MEMORY_USAGE_AUTO
-			};
-			VmaAllocationInfo trans_image_alloc_info;
-			chk(vmaCreateBuffer(engine->allocator, &trans_image_bufferCI, &trans_image_allocCI, &trans_image_buffer, &trans_image_allocation, &trans_image_alloc_info), __LINE__);
-
-			VkCommandBuffer scrn_shot_cb = beginOneTimeCommand(engine, __LINE__);
-			VkImageMemoryBarrier2 mb_transfer {
-				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-				.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-				.srcAccessMask = 0,
-				.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-				.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-				.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-				.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				.image = engine->sc_images[engine->image_index],
-				.subresourceRange = {
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.levelCount = 1,
-					.layerCount = 1
-				}
-			};
-			VkDependencyInfo transfer_info {
-				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = &mb_transfer
-			};
-			vkCmdPipelineBarrier2(scrn_shot_cb, &transfer_info);
-			VkBufferImageCopy copy_region {
-				.bufferOffset = 0,
-				.imageSubresource {
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.mipLevel = 0,
-					.layerCount = 1
-				},
-				.imageExtent {
-					.width = engine->surface_caps.currentExtent.width,
-					.height = engine->surface_caps.currentExtent.height,
-					.depth = 1
-				}
-			};
-			vkCmdCopyImageToBuffer(scrn_shot_cb, engine->sc_images[engine->image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, trans_image_buffer, 1, &copy_region);
-			chk(vkEndCommandBuffer(scrn_shot_cb), __LINE__);
-			VkSemaphoreSubmitInfo scrn_shot_wait_semaphore_info {
-				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-				.semaphore = engine->image_acquired_semaphores[engine->frame_index],
-				.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
-			};
-			VkCommandBufferSubmitInfo scrn_shot_command_buffer_submit_info {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-				.commandBuffer = scrn_shot_cb
-			};
-			VkSemaphoreSubmitInfo scrn_shot_signal_semaphore_info {
-				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-				.semaphore = engine->image_acquired_semaphores[engine->frame_index],
-				.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
-			};
-			VkSubmitInfo2 scrn_shot_submit_info {
-				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-				.waitSemaphoreInfoCount = 1,
-				.pWaitSemaphoreInfos = &scrn_shot_wait_semaphore_info,
-				.commandBufferInfoCount = 1,
-				.pCommandBufferInfos = &scrn_shot_command_buffer_submit_info,
-				.signalSemaphoreInfoCount = 1,
-				.pSignalSemaphoreInfos = &scrn_shot_signal_semaphore_info
-			};
-			chk(vkQueueSubmit2(engine->queue, 1, &scrn_shot_submit_info, engine->fences[engine->frame_index]), __LINE__);
-			chk(vkWaitForFences(engine->device, 1, &engine->fences[engine->frame_index], VK_TRUE, UINT64_MAX), __LINE__);
-			chk(vkResetFences(engine->device, 1, &engine->fences[engine->frame_index]), __LINE__);
-
-			ktxTextureCreateInfo scrn_shotCI{
-				.vkFormat = engine->swapchainCI.imageFormat,
-				.baseWidth = (ktx_uint32_t)engine->surface_caps.currentExtent.width,
-				.baseHeight = (ktx_uint32_t)engine->surface_caps.currentExtent.height,
-				.baseDepth = 1,
-				.numDimensions = 2,
-				.numLevels = 1,
-				.numLayers = 1,
-				.numFaces = 1,
-				.isArray = KTX_FALSE,
-				.generateMipmaps = KTX_FALSE
-			};
-			ktxTexture2* scrn_shot;
-			bool no_error = true;
-			KTX_error_code err;
-			err = ktxTexture2_Create(&scrn_shotCI, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &scrn_shot);
-			if(err != KTX_SUCCESS) {
-				std::cerr << "KTX ERROR: Failed to initialize ktxTexture for screenshot at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
-				no_error = false;
-			}
-			memcpy(scrn_shot->pData, trans_image_alloc_info.pMappedData, scrn_shot->dataSize);
-			if(err != KTX_SUCCESS) {
-				std::cerr << "KTX ERROR: Failed to copy image buffer data into ktxTexture for screenshot at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
-				no_error = false;
-			}
-			vmaDestroyBuffer(engine->allocator, trans_image_buffer, trans_image_allocation);
-			uint32_t scrn_shot_i = 0;
-			std::filesystem::path scrn_shot_path = "./results/untitled_" + std::to_string(scrn_shot_i) + ".ktx";
-			if(no_error) {
-			while(std::filesystem::exists(scrn_shot_path.string())) {
-				scrn_shot_i++;
-				scrn_shot_path = "./results/untitled_" + std::to_string(scrn_shot_i) + ".ktx";
-			}
-			err = ktxTexture2_WriteToNamedFile(scrn_shot, scrn_shot_path.string().c_str());
-			if(err != KTX_SUCCESS) {
-				std::cerr << "KTX ERROR: Failed to write screen shot ktxTexture to file at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
-			}
-			else {
-				std::cout << "Screenshot \"" << scrn_shot_path.string() << "\" taken\n";
-			}}
-			ktxTexture2_Destroy(scrn_shot);
+			engine->taking_screenshot = true;
 		}
 	}
-}
 
-void engine_poll_scancodes(Engine* engine) {
 	engine->deltatime = SDL_GetTicks() - engine->last_time / 1000.0f;
 	engine->last_time = SDL_GetTicks();
 	const bool* key_states = SDL_GetKeyboardState(NULL);
@@ -248,6 +125,131 @@ void engine_poll_scancodes(Engine* engine) {
 	if(key_states[SDL_SCANCODE_O]) {
 		engine->cam_zoom = engine->og_cam_zoom;
 	}
+}
+
+void engine_take_screenshot(Engine* engine) {
+	VkMemoryRequirements image_mem_reqs;
+	vkGetImageMemoryRequirements(engine->device, engine->sc_images[engine->image_index], &image_mem_reqs);
+
+	VkBuffer trans_image_buffer;
+	VmaAllocation trans_image_allocation;
+	VkBufferCreateInfo trans_image_bufferCI {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = image_mem_reqs.size,
+		.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT
+	};
+	VmaAllocationCreateInfo trans_image_allocCI {
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+	VmaAllocationInfo trans_image_alloc_info;
+	chk(vmaCreateBuffer(engine->allocator, &trans_image_bufferCI, &trans_image_allocCI, &trans_image_buffer, &trans_image_allocation, &trans_image_alloc_info), __LINE__);
+
+	VkCommandBuffer scrn_shot_cb = beginOneTimeCommand(engine, __LINE__);
+	VkImageMemoryBarrier2 mb_transfer {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+		.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+		.srcAccessMask = 0,
+		.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		.image = engine->sc_images[engine->image_index],
+		.subresourceRange = {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.levelCount = 1,
+			.layerCount = 1
+		}
+	};
+	VkDependencyInfo transfer_info {
+		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &mb_transfer
+	};
+	vkCmdPipelineBarrier2(scrn_shot_cb, &transfer_info);
+	VkBufferImageCopy copy_region {
+		.bufferOffset = 0,
+		.imageSubresource {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.mipLevel = 0,
+			.layerCount = 1
+		},
+		.imageExtent {
+			.width = engine->surface_caps.currentExtent.width,
+			.height = engine->surface_caps.currentExtent.height,
+			.depth = 1
+		}
+	};
+	vkCmdCopyImageToBuffer(scrn_shot_cb, engine->sc_images[engine->image_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, trans_image_buffer, 1, &copy_region);
+	chk(vkEndCommandBuffer(scrn_shot_cb), __LINE__);
+	VkSemaphoreSubmitInfo scrn_shot_wait_semaphore_info {
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = engine->image_acquired_semaphores[engine->frame_index],
+		.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
+	};
+	VkCommandBufferSubmitInfo scrn_shot_command_buffer_submit_info {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+		.commandBuffer = scrn_shot_cb
+	};
+	VkSemaphoreSubmitInfo scrn_shot_signal_semaphore_info {
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = engine->image_acquired_semaphores[engine->frame_index],
+		.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
+	};
+	VkSubmitInfo2 scrn_shot_submit_info {
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+		.waitSemaphoreInfoCount = 1,
+		.pWaitSemaphoreInfos = &scrn_shot_wait_semaphore_info,
+		.commandBufferInfoCount = 1,
+		.pCommandBufferInfos = &scrn_shot_command_buffer_submit_info,
+		.signalSemaphoreInfoCount = 1,
+		.pSignalSemaphoreInfos = &scrn_shot_signal_semaphore_info
+	};
+	chk(vkQueueSubmit2(engine->queue, 1, &scrn_shot_submit_info, engine->fences[engine->frame_index]), __LINE__);
+	chk(vkWaitForFences(engine->device, 1, &engine->fences[engine->frame_index], VK_TRUE, UINT64_MAX), __LINE__);
+	chk(vkResetFences(engine->device, 1, &engine->fences[engine->frame_index]), __LINE__);
+
+	ktxTextureCreateInfo scrn_shotCI{
+		.vkFormat = engine->swapchainCI.imageFormat,
+		.baseWidth = (ktx_uint32_t)engine->surface_caps.currentExtent.width,
+		.baseHeight = (ktx_uint32_t)engine->surface_caps.currentExtent.height,
+		.baseDepth = 1,
+		.numDimensions = 2,
+		.numLevels = 1,
+		.numLayers = 1,
+		.numFaces = 1,
+		.isArray = KTX_FALSE,
+		.generateMipmaps = KTX_FALSE
+	};
+	ktxTexture2* scrn_shot;
+	bool no_error = true;
+	KTX_error_code err;
+	err = ktxTexture2_Create(&scrn_shotCI, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &scrn_shot);
+	if(err != KTX_SUCCESS) {
+		std::cerr << "KTX ERROR: Failed to initialize ktxTexture for screenshot at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
+		no_error = false;
+	}
+	memcpy(scrn_shot->pData, trans_image_alloc_info.pMappedData, scrn_shot->dataSize);
+	if(err != KTX_SUCCESS) {
+		std::cerr << "KTX ERROR: Failed to copy image buffer data into ktxTexture for screenshot at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
+		no_error = false;
+	}
+	vmaDestroyBuffer(engine->allocator, trans_image_buffer, trans_image_allocation);
+	uint32_t scrn_shot_i = 0;
+	std::filesystem::path scrn_shot_path = "./results/untitled_" + std::to_string(scrn_shot_i) + ".ktx";
+	if(no_error) {
+	while(std::filesystem::exists(scrn_shot_path.string())) {
+		scrn_shot_i++;
+		scrn_shot_path = "./results/untitled_" + std::to_string(scrn_shot_i) + ".ktx";
+	}
+	err = ktxTexture2_WriteToNamedFile(scrn_shot, scrn_shot_path.string().c_str());
+	if(err != KTX_SUCCESS) {
+		std::cerr << "KTX ERROR: Failed to write screen shot ktxTexture to file at line " << __LINE__ << "\nKTX ERROR " << ktxErrorString(err) << "\n";
+	}
+	else {
+		std::cout << "Screenshot \"" << scrn_shot_path.string() << "\" taken\n";
+	}}
+	ktxTexture2_Destroy(scrn_shot);
 }
 
 void engine_begin_rendering(Engine* engine) {
@@ -418,11 +420,10 @@ void engine_render_loop(Engine engine) {
 		chk(vkResetFences(engine.device, 1, &engine.fences[engine.frame_index]), __LINE__);
 		chk_swapchain(vkAcquireNextImageKHR(engine.device, engine.swapchain, UINT64_MAX, engine.image_acquired_semaphores[engine.frame_index], VK_NULL_HANDLE, &engine.image_index), &engine.update_swapchain, __LINE__);
 
-		// First round of input handling
-		engine_poll_events(&engine);
-		// Recreate Swapchain
-		if(engine.update_swapchain) {
-			engine_recreate_swapchain(&engine);
+		// Take Screenshot
+		if(engine.taking_screenshot) {
+			engine_take_screenshot(&engine);
+			engine.taking_screenshot = false;
 		}
 
 		engine_begin_rendering(&engine);
@@ -445,8 +446,12 @@ void engine_render_loop(Engine engine) {
 
 		engine_end_rendering_and_present(&engine);
 
-		// Poll events part 2
-		engine_poll_scancodes(&engine);
+		// First round of input handling
+		engine_poll_events(&engine);
+		// Recreate Swapchain
+		if(engine.update_swapchain) {
+			engine_recreate_swapchain(&engine);
+		}
 	}
 }
 
