@@ -52,14 +52,18 @@ float4 main(VSOutput input) {
     float contrast = 20.0f; // controls contrast between edges and image
 
     float sum = 0;
+    float norm = 0;
     for(int i = 0; i < 5; i++) {
     	for(int j = 0; j < 5; j++) {
     		float color = dot(tex.Sample(float2(input.uv.x + (i - 2) * tex_size.x, input.uv.y + (j - 2) * tex_size.y)).rgb, float3(0.299, 0.587, 0.114));
 		float g1 = gaussian(i-2,j-2, strength);
 		float g2 = gaussian(i-2, j-2, strength*scalar);
-		sum += color * ((1.0f + edge_sharpness) * g1 - edge_sharpness * g2);
+		float dg = ((1.0f + edge_sharpness) * g1 - edge_sharpness * g2);
+		sum += color * dg;
+		norm += dg;
 	}
     }
+    sum /= norm;
     sum = threshold(sum, sum_threshold, contrast);
     
     return float4(sum, sum, sum, 1.0f);

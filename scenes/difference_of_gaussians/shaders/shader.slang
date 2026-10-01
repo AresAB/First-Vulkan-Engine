@@ -57,6 +57,7 @@ float4 main(VSOutput input) {
     float contrast = 20.0f; // controls contrast between edges and image
 
     float sum = 0;
+    float norm = 0;
     float[5][5] colors;
     for(int i = 0; i < 5; i++) {
     	for(int j = 0; j < 5; j++) {

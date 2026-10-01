@@ -28,8 +28,12 @@ VSOutput main(VSInput input, uniform ShaderData* shader_data, uint instance_inde
 // 6.28 ~= 2pi
 // dist = pos - center_pos, s = strength
 // exp = e^(x)
-float gaussian(float x_dist, float y_dist, float s) {
+float gaussian2d(float x_dist, float y_dist, float s) {
 	return exp(-((x_dist * x_dist)+(y_dist * y_dist))/(2.0*s*s))/(s*s*6.28);
+}
+// 2.51 ~= sqrt(2pi)
+float gaussian(float x_dist, float s) {
+	return exp(-(x_dist * x_dist)/(2.0f*s*s))/(s*2.51);
 }
 
 [shader("fragment")]
@@ -38,19 +42,27 @@ float4 main(VSOutput input) {
     float2 tex_dim;
     tex.GetDimensions(tex_dim.x, tex_dim.y);
     float2 tex_size = float2(1.0f/tex_dim.x, 1.0f/tex_dim.y);
-    float sum = 0;
-    float norm = 0;
-    float strength = 0.6;
-    float scalar = 1.5;
-    for(int i = 0; i < 5; i++) {
-    	for(int j = 0; j < 5; j++) {
-    		float color = dot(tex.Sample(float2(input.uv.x + (i - 2) * tex_size.x, input.uv.y + (j - 2) * tex_size.y)).rgb, float3(0.299, 0.587, 0.114));
-		float g = (gaussian(i-2, j-2, strength*scalar) - gaussian(i-2,j-2, strength));
+
+    float kernal_strength = 5.0f;
+    float min_edge_amplitude = 0.1f;
+
+    float3 sum = float3(0.0f,0.0f,0.0f);
+    float norm = 0.0f;
+
+    int kernal_size = kernal_strength;
+    int off = kernal_size / 2;
+    float gray_center = dot(tex.Sample(input.uv).rgb, float3(0.299, 0.587, 0.114));
+    for(int i = -off; i < off; i++) {
+    	for(int j = -off; j < off; j++) {
+    		float3 color = tex.Sample(float2(input.uv.x + i * tex_size.x, input.uv.y + j * tex_size.y)).rgb;
+		float gray = dot(color, float3(0.299, 0.587, 0.114));
+		float g = (gaussian2d(i, j, kernal_strength) * gaussian(gray - gray_center, min_edge_amplitude));
 		sum += color * g;
 		norm += g;
 	}
     }
     sum /= norm;
     
-    return float4(sum, sum, sum, 1.0f);
+    return float4(sum, 1.0f);
+    //return tex.Sample(input.uv);
 }
