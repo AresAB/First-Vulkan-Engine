@@ -49,8 +49,7 @@ float4 main(VSOutput input) {
     float3 sum = float3(0.0f,0.0f,0.0f);
     float norm = 0.0f;
 
-    int kernal_size = kernal_strength;
-    int off = kernal_size / 2;
+    int off = kernal_strength * 3;
     float gray_center = dot(tex.Sample(input.uv).rgb, float3(0.299, 0.587, 0.114));
     for(int i = -off; i < off; i++) {
     	for(int j = -off; j < off; j++) {
